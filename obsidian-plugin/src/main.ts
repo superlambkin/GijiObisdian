@@ -2,6 +2,7 @@ import { Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
 import { startSegment, stopSegment } from "./commands/recordSegment";
 import { importAudioFlow } from "./ui/filePicker";
+import { setupClaudianButton } from "./ui/claudianButton";
 
 export default class GijiPlugin extends Plugin {
   settings: GijiSettings = DEFAULT_SETTINGS;
@@ -9,6 +10,8 @@ export default class GijiPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
     this.addSettingTab(new GijiSettingsTab(this.app, this));
+
+    this.register(setupClaudianButton(this, this.settings));
 
     this.addCommand({
       id: "record-start",
