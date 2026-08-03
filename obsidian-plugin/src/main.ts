@@ -6,6 +6,17 @@ export default class GijiPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    // inside onload(), after loadSettings()
+    this.addCommand({
+      id: "import-audio-to-minutes",
+      name: "导入音频生成会议纪要",
+      callback: async () => {
+        // file picker handled by Obsidian; here we invoke pipeline with chosen wav buffer.
+        // Wired fully in Task 7 with Notice + file picker modal.
+      },
+    });
+
     // commands wired in Task 7
   }
 
