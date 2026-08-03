@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
-    "test": "tsx --test \"src/__tests__/**/*.test.ts\""
+    "test": "tsx --require ./src/__tests__/setup.cjs --test \"src/__tests__/**/*.test.ts\""
   },
   "keywords": ["obsidian", "plugin", "meeting", "stt", "minutes"],
   "author": "MiuMiu",
