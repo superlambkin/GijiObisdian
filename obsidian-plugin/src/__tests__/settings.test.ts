@@ -7,4 +7,6 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttLang, "auto");
   assert.equal(DEFAULT_SETTINGS.llmProvider, "cloud");
   assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
+  assert.equal(DEFAULT_SETTINGS.autoSaveTranscript, true);
+  assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "Clippings");
 });

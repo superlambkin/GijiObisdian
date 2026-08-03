@@ -2,6 +2,7 @@ import { Notice, Plugin } from "obsidian";
 import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
+import { saveTranscriptToFile } from "../notes/saver";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
@@ -167,6 +168,15 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
         btn.classList.remove("giji-recording");
         state.recorder = new SegmentRecorder(plugin.app);
         if (!text) return;
+
+        if (settings.autoSaveTranscript) {
+          try {
+            const savedPath = await saveTranscriptToFile(plugin.app, settings, text);
+            new Notice(`📄 转写已保存: ${savedPath}`);
+          } catch (err: any) {
+            new Notice(`保存转写失败: ${err?.message ?? err}`);
+          }
+        }
 
         const ta = findTextarea(btn);
         if (!ta) {

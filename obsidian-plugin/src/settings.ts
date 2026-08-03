@@ -15,6 +15,8 @@ export interface GijiSettings {
   minutesTemplate: string;
   outputDir: string;
   keepTranscript: boolean;
+  autoSaveTranscript: boolean;
+  transcriptSaveDir: string;
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
@@ -30,6 +32,8 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   minutesTemplate: "",
   outputDir: "📋 纪要",
   keepTranscript: true,
+  autoSaveTranscript: true,
+  transcriptSaveDir: "Clippings",
 };
 
 import { App, PluginSettingTab, Setting } from "obsidian";
@@ -112,6 +116,28 @@ export class GijiSettingsTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(this.plugin.settings.bridgeDir).onChange(async (v: string) => {
           this.plugin.settings.bridgeDir = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("自动保存转写为 MD")
+      .setDesc("录音转文本后自动保存为 Markdown 文档")
+      .addToggle((t) =>
+        t
+          .setValue(this.plugin.settings.autoSaveTranscript)
+          .onChange(async (v: boolean) => {
+            this.plugin.settings.autoSaveTranscript = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("转写保存目录")
+      .setDesc("转写 MD 在 OB 内的保存位置（默认 Clippings）")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.transcriptSaveDir).onChange(async (v: string) => {
+          this.plugin.settings.transcriptSaveDir = v;
           await this.plugin.saveSettings();
         })
       );
