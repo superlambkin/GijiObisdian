@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sounddevice>=0.4.6
+soundfile>=0.12.1
+pytest>=8.0
+httpx>=0.27
