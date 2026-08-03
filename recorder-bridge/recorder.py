@@ -41,7 +41,8 @@ class Recorder:
             return self._session_id
 
     def _on_audio(self, indata, frames, time, status):
-        self._frames.append(indata.copy())
+        with self._lock:
+            self._frames.append(indata.copy())
 
     def stop(self) -> dict:
         with self._lock:
