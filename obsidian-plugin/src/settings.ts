@@ -11,6 +11,7 @@ export interface GijiSettings {
   llmModel: string;
   llmApiKey: string;
   bridgeBaseUrl: string;
+  bridgeDir: string;
   minutesTemplate: string;
   outputDir: string;
   keepTranscript: boolean;
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmModel: "deepseek-chat",
   llmApiKey: "",
   bridgeBaseUrl: "http://127.0.0.1:17890",
+  bridgeDir: "D:\\AI-Agent\\giji-obsidian\\recorder-bridge",
   minutesTemplate: "",
   outputDir: "📋 纪要",
   keepTranscript: true,
@@ -101,6 +103,15 @@ export class GijiSettingsTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(this.plugin.settings.bridgeBaseUrl).onChange(async (v: string) => {
           this.plugin.settings.bridgeBaseUrl = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("录音桥目录")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.bridgeDir).onChange(async (v: string) => {
+          this.plugin.settings.bridgeDir = v;
           await this.plugin.saveSettings();
         })
       );

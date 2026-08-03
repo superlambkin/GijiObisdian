@@ -1,6 +1,7 @@
 import { Notice, Plugin } from "obsidian";
 import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
+import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
@@ -80,6 +81,63 @@ function insertTextIntoElement(el: HTMLElement, text: string) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function updateBridgeButton(btn: HTMLButtonElement, up: boolean) {
+  if (up) {
+    btn.textContent = "🟢";
+    btn.title = "录音桥运行中";
+  } else {
+    btn.textContent = "🔴";
+    btn.title = "录音桥未启动，点击启动";
+  }
+}
+
+async function refreshBridgeButtons(settings: GijiSettings) {
+  const up = await isBridgeUp(settings);
+  document.querySelectorAll(".giji-bridge-btn").forEach((el) => {
+    const btn = el as HTMLButtonElement;
+    if (btn.disabled) return;
+    updateBridgeButton(btn, up);
+  });
+}
+
+function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.classList.add("giji-bridge-btn", "claudian-action-btn");
+  btn.setAttribute("aria-label", "录音桥");
+  btn.setAttribute(BTN_MARK, "true");
+  updateBridgeButton(btn, false);
+
+  let busy = false;
+
+  btn.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    btn.disabled = true;
+    try {
+      if (await isBridgeUp(settings)) {
+        updateBridgeButton(btn, true);
+        new Notice("录音桥已在运行");
+        return;
+      }
+      btn.textContent = "🟡";
+      btn.title = "启动中…";
+      const ok = await launchBridge(settings);
+      if (ok) {
+        updateBridgeButton(btn, true);
+        new Notice("✅ 录音桥已启动");
+      } else {
+        updateBridgeButton(btn, false);
+        new Notice("启动失败，请检查录音桥目录设置或手动启动");
+      }
+    } finally {
+      busy = false;
+      btn.disabled = false;
+    }
+  });
+
+  return btn;
+}
+
 function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.classList.add("giji-record-btn", "claudian-action-btn");
@@ -138,9 +196,23 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
 }
 
 function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElement) {
-  if (toolbar.querySelector(`[${BTN_MARK}]`)) return;
-  const btn = makeButton(plugin, settings);
-  toolbar.appendChild(btn);
+  const hasBridge = toolbar.querySelector(".giji-bridge-btn");
+  const hasRecord = toolbar.querySelector(".giji-record-btn");
+  if (hasBridge && hasRecord) return;
+
+  if (!hasBridge) {
+    const bridgeBtn = makeBridgeButton(plugin, settings);
+    if (hasRecord) {
+      toolbar.insertBefore(bridgeBtn, hasRecord);
+    } else {
+      toolbar.appendChild(bridgeBtn);
+    }
+  }
+
+  if (!hasRecord) {
+    const recordBtn = makeButton(plugin, settings);
+    toolbar.appendChild(recordBtn);
+  }
 }
 
 export function setupClaudianButton(plugin: Plugin, settings: GijiSettings): () => void {
@@ -152,6 +224,7 @@ export function setupClaudianButton(plugin: Plugin, settings: GijiSettings): () 
   }
 
   scan();
+  refreshBridgeButtons(settings).catch(() => {});
 
   const observer = new MutationObserver((mutations) => {
     let shouldScan = false;
@@ -172,7 +245,12 @@ export function setupClaudianButton(plugin: Plugin, settings: GijiSettings): () 
 
   observer.observe(document.body, { childList: true, subtree: true });
 
+  const interval = setInterval(() => {
+    refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
+  }, 5000);
+
   return () => {
+    clearInterval(interval);
     observer.disconnect();
     document.querySelectorAll(`[${BTN_MARK}]`).forEach((btn) => btn.remove());
   };
