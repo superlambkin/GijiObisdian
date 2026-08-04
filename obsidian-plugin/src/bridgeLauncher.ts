@@ -1,3 +1,4 @@
+import { spawn as nodeSpawn } from "child_process";
 import { GijiSettings } from "./settings";
 import { bridgeHealth } from "./bridge";
 
@@ -18,10 +19,14 @@ export async function isBridgeUp(
 }
 
 async function defaultSpawn(cmd: string, args: string[], opts: any): Promise<any> {
-  const { spawn } = await import("child_process");
-  const child = spawn(cmd, args, opts);
+  const child = nodeSpawn(cmd, args, opts);
   child.unref();
-  return child;
+  // spawn の ENOENT 等は 'error' イベントで届く（throw ではない）。
+  // これを reject に変換しないと 15 秒の静默ポーリング後にしか失敗が分からない。
+  return new Promise((resolve, reject) => {
+    child.once("spawn", () => resolve(child));
+    child.once("error", (err: Error) => reject(err));
+  });
 }
 
 export async function launchBridge(
