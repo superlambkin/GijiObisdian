@@ -1,0 +1,24 @@
+import { GijiSettings } from "../settings";
+import { createSttProvider } from "../providers/stt";
+import { decodeTestAudio } from "./audioSample";
+
+export interface SttTestResult {
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
+export async function runSttTest(
+  settings: GijiSettings,
+  fetchImpl: typeof fetch = fetch
+): Promise<SttTestResult> {
+  if (!settings.sttApiKey) return { ok: false, error: "请先填写 STT API Key" };
+  const provider = createSttProvider(settings, fetchImpl);
+  try {
+    const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
+    if (!text.trim()) return { ok: false, error: "请求成功但未识别出文本" };
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
