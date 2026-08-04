@@ -36,7 +36,8 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   transcriptSaveDir: "Clippings",
 };
 
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { runSttTest } from "./test/sttTest";
 
 export class GijiSettingsTab extends PluginSettingTab {
   constructor(app: App, private plugin: any) {
@@ -82,6 +83,22 @@ export class GijiSettingsTab extends PluginSettingTab {
             this.plugin.settings.sttLang = v as any;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("🧪 测试转写")
+      .setDesc("用内置语音样本验证 STT 转换是否可用")
+      .addButton((btn) =>
+        btn.setButtonText("开始测试").onClick(async () => {
+          btn.setDisabled(true).setButtonText("测试中…");
+          try {
+            const res = await runSttTest(this.plugin.settings);
+            if (res.ok) new Notice(`✅ 转写成功: ${res.text}`);
+            else new Notice(`❌ 测试失败: ${res.error}`);
+          } finally {
+            btn.setDisabled(false).setButtonText("开始测试");
+          }
+        })
       );
 
     new Setting(containerEl)
