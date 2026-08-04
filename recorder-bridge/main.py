@@ -1,10 +1,20 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import config
 from recorder import Recorder
 
 app = FastAPI(title="GijiObsidian Recorder Bridge")
+
+# Obsidian プラグイン（app://obsidian.md 等）からの fetch を許可する
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 _recorder = Recorder()
 
 

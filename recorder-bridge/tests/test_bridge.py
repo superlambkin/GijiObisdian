@@ -14,6 +14,13 @@ def test_health():
     assert "version" in body
 
 
+def test_cors_headers_present_for_obsidian_origin():
+    """Obsidian プラグイン（Origin: app://obsidian.md）からの fetch を許可する"""
+    r = client.get("/health", headers={"Origin": "app://obsidian.md"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == "*"
+
+
 def test_record_start_and_stop_produces_wav(tmp_path, monkeypatch):
     monkeypatch.setattr("config.TMP_DIR", str(tmp_path))
     # start
