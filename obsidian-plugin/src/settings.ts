@@ -17,6 +17,7 @@ export interface GijiSettings {
   keepTranscript: boolean;
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
+  fileNameTemplate: string;
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   keepTranscript: true,
   autoSaveTranscript: true,
   transcriptSaveDir: "Clippings",
+  fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
@@ -155,6 +157,16 @@ export class GijiSettingsTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(this.plugin.settings.transcriptSaveDir).onChange(async (v: string) => {
           this.plugin.settings.transcriptSaveDir = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("文件名模板")
+      .setDesc("转写 MD 的文件名。占位符: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.fileNameTemplate).onChange(async (v: string) => {
+          this.plugin.settings.fileNameTemplate = v;
           await this.plugin.saveSettings();
         })
       );

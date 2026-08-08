@@ -5,6 +5,11 @@ import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
 import { splitWavBySeconds } from "./chunker";
 
+export interface SegmentResult {
+  text: string;
+  durationSec: number;
+}
+
 export class SegmentRecorder {
   private sessionId: string | null = null;
 
@@ -30,7 +35,7 @@ export class SegmentRecorder {
     }
   }
 
-  async stop(settings: GijiSettings): Promise<string | null> {
+  async stop(settings: GijiSettings): Promise<SegmentResult | null> {
     if (!this.sessionId) {
       new Notice("当前没有进行中的录音");
       return null;
@@ -38,7 +43,7 @@ export class SegmentRecorder {
     const sessionId = this.sessionId;
     this.sessionId = null;
     try {
-      const { wavPath } = await bridgeStop(settings.bridgeBaseUrl, sessionId);
+      const { wavPath, durationSec } = await bridgeStop(settings.bridgeBaseUrl, sessionId);
       new Notice("转写中…");
 
       const adapter = this.app.vault.adapter as any;
@@ -56,7 +61,7 @@ export class SegmentRecorder {
       const chunks = splitWavBySeconds(buf, 600);
       const parts: string[] = [];
       for (const c of chunks) parts.push(await stt.transcribe(c, settings.sttLang));
-      return parts.join("\n\n");
+      return { text: parts.join("\n\n"), durationSec };
     } catch (err: any) {
       new Notice(`${err?.message ?? err}`);
       throw err;

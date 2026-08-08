@@ -160,8 +160,13 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
     try {
       if (state.recorder.isRecording()) {
         let text: string | null = null;
+        let durationSec: number | undefined;
         try {
-          text = await state.recorder.stop(settings);
+          const result = await state.recorder.stop(settings);
+          if (result) {
+            text = result.text;
+            durationSec = result.durationSec;
+          }
         } catch {
           // Recorder already surfaces Notice; reset UI below.
         }
@@ -172,7 +177,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
 
         if (settings.autoSaveTranscript) {
           try {
-            const savedPath = await saveTranscriptToFile(plugin.app, settings, text);
+            const savedPath = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
             new Notice(`📄 转写已保存: ${savedPath}`);
           } catch (err: any) {
             new Notice(`保存转写失败: ${err?.message ?? err}`);

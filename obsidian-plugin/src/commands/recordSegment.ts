@@ -20,8 +20,8 @@ export async function startSegment(app: App, settings: GijiSettings) {
 
 export async function stopSegment(app: App, settings: GijiSettings) {
   const r = getRecorder(app);
-  const text = await r.stop(settings);
-  if (text === null) return;
+  const result = await r.stop(settings);
+  if (result === null) return;
 
   const view = app.workspace.getActiveViewOfType(Object as any) as any;
   const editor = view?.editor;
@@ -32,6 +32,6 @@ export async function stopSegment(app: App, settings: GijiSettings) {
   const now = new Date();
   const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
   const cur = editor.getValue();
-  editor.setValue(appendSegmentNote(cur, `${time}`, text));
+  editor.setValue(appendSegmentNote(cur, `${time}`, result.text));
   new Notice("✅ 转写已追加");
 }
