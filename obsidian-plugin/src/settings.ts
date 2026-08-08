@@ -52,6 +52,52 @@ export class GijiSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "GijiObsidian 设置" });
+    containerEl.createEl("p", {
+      text: "按工作流程分类：① 录音 → ② 转写 → ③ 纪要生成 → ④ 其他",
+      cls: "setting-item-description",
+    });
+
+    /* ==================== ① 🎙️ 录音（録音） ==================== */
+    new Setting(containerEl)
+      .setName("① 🎙️ 录音")
+      .setDesc("麦克风 → 本地录音桥（Python FastAPI）录制 WAV")
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName("录音桥地址")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.bridgeBaseUrl).onChange(async (v: string) => {
+          this.plugin.settings.bridgeBaseUrl = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("录音桥目录")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.bridgeDir).onChange(async (v: string) => {
+          this.plugin.settings.bridgeDir = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("追加录音")
+      .setDesc("开启后，同一小时（年月日時相同）内开始的录音将追加到该小时最早的议事录文件中")
+      .addToggle((t) =>
+        t
+          .setValue(this.plugin.settings.appendRecordEnabled)
+          .onChange(async (v: boolean) => {
+            this.plugin.settings.appendRecordEnabled = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    /* ==================== ② 📝 转写（文字起こし） ==================== */
+    new Setting(containerEl)
+      .setName("② 📝 转写")
+      .setDesc("WAV → 云 STT 转文字，自动保存为议事录 MD")
+      .setHeading();
 
     new Setting(containerEl)
       .setName("STT Provider")
@@ -90,58 +136,6 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("🧪 测试转写")
-      .setDesc("用内置语音样本验证 STT 转换是否可用")
-      .addButton((btn) =>
-        btn.setButtonText("开始测试").onClick(async () => {
-          btn.setDisabled(true).setButtonText("测试中…");
-          try {
-            const res = await runSttTest(this.plugin.settings);
-            if (res.ok) new Notice(`✅ 转写成功: ${res.text}`);
-            else new Notice(`❌ 测试失败: ${res.error}`);
-          } finally {
-            btn.setDisabled(false).setButtonText("开始测试");
-          }
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("LLM baseUrl")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.llmBaseUrl).onChange(async (v: string) => {
-          this.plugin.settings.llmBaseUrl = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("LLM API Key")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.llmApiKey).onChange(async (v: string) => {
-          this.plugin.settings.llmApiKey = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("录音桥地址")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.bridgeBaseUrl).onChange(async (v: string) => {
-          this.plugin.settings.bridgeBaseUrl = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("录音桥目录")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.bridgeDir).onChange(async (v: string) => {
-          this.plugin.settings.bridgeDir = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
       .setName("自动保存转写为 MD")
       .setDesc("录音转文本后自动保存为 Markdown 文档")
       .addToggle((t) =>
@@ -173,16 +167,95 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
+    /* ==================== ③ 🤖 纪要生成（要約） ==================== */
     new Setting(containerEl)
-      .setName("追加录音")
-      .setDesc("开启后，同一小时（年月日時相同）内开始的录音将追加到该小时最早的议事录文件中")
-      .addToggle((t) =>
-        t
-          .setValue(this.plugin.settings.appendRecordEnabled)
-          .onChange(async (v: boolean) => {
-            this.plugin.settings.appendRecordEnabled = v;
+      .setName("③ 🤖 纪要生成")
+      .setDesc("转写文本 → LLM 生成会议纪要（「导入音频生成会议纪要」命令使用）")
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName("LLM 提供商")
+      .addDropdown((d) =>
+        d.addOption("cloud", "云端（OpenAI 兼容 API）")
+          .addOption("ollama", "Ollama（本地）")
+          .setValue(this.plugin.settings.llmProvider)
+          .onChange(async (v: string) => {
+            this.plugin.settings.llmProvider = v;
             await this.plugin.saveSettings();
           })
+      );
+
+    new Setting(containerEl)
+      .setName("LLM baseUrl")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.llmBaseUrl).onChange(async (v: string) => {
+          this.plugin.settings.llmBaseUrl = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("LLM 模型")
+      .setDesc("例: deepseek-chat / gpt-4o-mini / qwen2.5 等")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.llmModel).onChange(async (v: string) => {
+          this.plugin.settings.llmModel = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("LLM API Key")
+      .setDesc("Ollama（本地）时无需填写")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.llmApiKey).onChange(async (v: string) => {
+          this.plugin.settings.llmApiKey = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("纪要保存目录")
+      .setDesc("生成的会议纪要 MD 在 OB 内的保存位置（默认 📋 纪要）")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.outputDir).onChange(async (v: string) => {
+          this.plugin.settings.outputDir = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("纪要附带转写原文")
+      .setDesc("开启后，生成的会议纪要 MD 末尾附带完整转写原文")
+      .addToggle((t) =>
+        t
+          .setValue(this.plugin.settings.keepTranscript)
+          .onChange(async (v: boolean) => {
+            this.plugin.settings.keepTranscript = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    /* ==================== ④ ⚙️ 其他（その他） ==================== */
+    new Setting(containerEl)
+      .setName("④ ⚙️ 其他")
+      .setDesc("诊断工具")
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName("🧪 测试转写")
+      .setDesc("用内置语音样本验证 ② 转写设置是否可用")
+      .addButton((btn) =>
+        btn.setButtonText("开始测试").onClick(async () => {
+          btn.setDisabled(true).setButtonText("测试中…");
+          try {
+            const res = await runSttTest(this.plugin.settings);
+            if (res.ok) new Notice(`✅ 转写成功: ${res.text}`);
+            else new Notice(`❌ 测试失败: ${res.error}`);
+          } finally {
+            btn.setDisabled(false).setButtonText("开始测试");
+          }
+        })
       );
   }
 }
