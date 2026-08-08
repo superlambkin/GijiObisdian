@@ -1,4 +1,5 @@
 import { App, Notice } from "obsidian";
+import { readFileSync } from "fs";
 import { GijiSettings } from "../settings";
 import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
@@ -45,8 +46,9 @@ export class SegmentRecorder {
       try {
         buf = await adapter.readBinary(wavPath);
       } catch {
-        const fs = await import("fs");
-        const nodeBuf = fs.readFileSync(wavPath);
+        // vault 外の絶対パスは adapter が読めないため Node fs で読む。
+        // 動的 import("fs") は Chromium が解決できないため静的 import 必須（e2e7f47 参照）。
+        const nodeBuf = readFileSync(wavPath);
         buf = nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength);
       }
 
