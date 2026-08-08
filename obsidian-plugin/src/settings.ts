@@ -18,6 +18,7 @@ export interface GijiSettings {
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
   fileNameTemplate: string;
+  appendRecordEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   autoSaveTranscript: true,
   transcriptSaveDir: "Clippings",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
+  appendRecordEnabled: true,
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
@@ -169,6 +171,18 @@ export class GijiSettingsTab extends PluginSettingTab {
           this.plugin.settings.fileNameTemplate = v;
           await this.plugin.saveSettings();
         })
+      );
+
+    new Setting(containerEl)
+      .setName("追加录音")
+      .setDesc("开启后，若同名（同时间精度）议事录已存在，则将新转写内容追加到该文件而非新建")
+      .addToggle((t) =>
+        t
+          .setValue(this.plugin.settings.appendRecordEnabled)
+          .onChange(async (v: boolean) => {
+            this.plugin.settings.appendRecordEnabled = v;
+            await this.plugin.saveSettings();
+          })
       );
   }
 }

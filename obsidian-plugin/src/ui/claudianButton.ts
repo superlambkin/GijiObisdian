@@ -177,8 +177,8 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
 
         if (settings.autoSaveTranscript) {
           try {
-            const savedPath = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
-            new Notice(`📄 转写已保存: ${savedPath}`);
+            const saved = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
+            new Notice(saved.appended ? `📄 已追记到议事录: ${saved.path}` : `📄 转写已保存: ${saved.path}`);
           } catch (err: any) {
             new Notice(`保存转写失败: ${err?.message ?? err}`);
           }

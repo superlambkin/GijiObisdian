@@ -100,8 +100,83 @@ export function renderTranscriptNote(
 }
 
 /**
+ * 既存議事録に追加録音セクションを追記した新しい内容を組み立てる。
+ * - `## 📝 更新記録` の直前に `## 🕐 追加録音（日時）` セクションを挿入
+ * - frontmatter `modified` を追記時刻に更新
+ * - 更新記録に `v1.0.x`（パッチ番号インクリメント）の行を追加
+ * 旧形式など更新記録セクションが無い場合は末尾に追記する。
+ */
+export function buildAppendedNote(
+  prev: string,
+  text: string,
+  durationSec: number | undefined,
+  now: Date
+): string {
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const timeHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const charCount = text.trim().length;
+  const duration = durationSec === undefined ? "—" : formatDuration(durationSec);
+
+  // frontmatter modified を行単位で更新（他フィールドは保持）
+  let out = prev.replace(/^modified: .*$/m, `modified: ${date} ${timeHM}`);
+
+  // 追加録音セクション
+  const segment = [
+    `## 🕐 追加録音（${date} ${timeHM}）`,
+    "",
+    "追加録音の概要（文字数・会議時間）は以下の通り。",
+    "",
+    "| 項目 | 値 |",
+    "|------|------|",
+    `| 📝 文字数 | ${charCount} 字 |`,
+    `| ⏱️ 会議時間 | ${duration} |`,
+    "",
+    text,
+    "",
+    "---",
+    "",
+  ].join("\n");
+
+  // 更新記録の次バージョン（v1.0.N の最大値 + 1）
+  const versions = [...prev.matchAll(/\| v1\.0\.(\d+) \|/g)].map((m) => parseInt(m[1], 10));
+  const nextPatch = (versions.length ? Math.max(...versions) : 0) + 1;
+  const changelogRow = `| v1.0.${nextPatch} | ${date} ${timeHM} | 追加録音を追記（音声転写から自動生成） | GijiObsidian 🎙️ |`;
+
+  const changelogIdx = out.indexOf("\n## 📝 更新記録");
+  if (changelogIdx === -1) {
+    // 更新記録セクションが無い旧ノート → 末尾に追記
+    const tail = out.endsWith("\n") ? out : out + "\n";
+    return (
+      tail +
+      "\n---\n\n" +
+      segment +
+      "\n## 📝 更新記録\n\n" +
+      "| バージョン | 日付 | 変更内容 | 変更者 |\n" +
+      "|------|------|------|------|\n" +
+      changelogRow +
+      "\n"
+    );
+  }
+
+  // `## 📝 更新記録` の直前にセクション挿入
+  out = out.slice(0, changelogIdx + 1) + segment + "\n" + out.slice(changelogIdx + 1);
+
+  // 更新記録テーブルの最終バージョン行の直後に新行を追加
+  const lastRowIdx = out.lastIndexOf("\n| v1.0.");
+  if (lastRowIdx !== -1) {
+    const lineEnd = out.indexOf("\n", lastRowIdx + 1);
+    const insertAt = lineEnd === -1 ? out.length : lineEnd;
+    out = out.slice(0, insertAt) + "\n" + changelogRow + out.slice(insertAt);
+  }
+
+  return out;
+}
+
+/**
  * 把转写文本保存为 MD 文档到 `settings.transcriptSaveDir`（Vault 内路径）。
- * 返回保存的文件路径（相对 Vault），失败抛异常由调用方提示。
+ * 同名（同时间精度）议事录已存在时：
+ *   - 追加录音 ON → 追记到既有文件（appended: true）
+ *   - 追加录音 OFF → 追加 -2, -3 … 后缀新建文件（appended: false）
  */
 export async function saveTranscriptToFile(
   app: App,
@@ -109,7 +184,7 @@ export async function saveTranscriptToFile(
   text: string,
   durationSec?: number,
   now: Date = new Date()
-): Promise<string> {
+): Promise<{ path: string; appended: boolean }> {
   const dir = (settings.transcriptSaveDir || "").trim().replace(/^\/+|\/+$/g, "") || "Clippings";
   const vault = app.vault as any;
 
@@ -119,10 +194,20 @@ export async function saveTranscriptToFile(
     await vault.createFolder(dir);
   }
 
-  // ファイル名衝突時は -2, -3 … を追加
   const template = (settings.fileNameTemplate || "").trim() || DEFAULT_SETTINGS.fileNameTemplate;
   const filename = buildTranscriptFilename(now, template);
-  let path = `${dir}/${filename}.md`;
+  const basePath = `${dir}/${filename}.md`;
+
+  // 追加録音：同名（＝同じ時間に開始した録音）議事録が存在すれば追記
+  if (settings.appendRecordEnabled && (await vault.adapter.exists(basePath))) {
+    const prev: string = await vault.adapter.read(basePath);
+    const next = buildAppendedNote(prev, text, durationSec, now);
+    await vault.adapter.write(basePath, next);
+    return { path: basePath, appended: true };
+  }
+
+  // 新規保存（衝突時は -2, -3 … を追加）
+  let path = basePath;
   let counter = 2;
   while (await vault.adapter.exists(path)) {
     path = `${dir}/${filename}-${counter}.md`;
@@ -131,5 +216,5 @@ export async function saveTranscriptToFile(
 
   const content = renderTranscriptNote(filename, now, text, durationSec, path);
   await vault.create(path, content);
-  return path;
+  return { path, appended: false };
 }

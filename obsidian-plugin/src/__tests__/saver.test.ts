@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS } from "../settings";
 import {
+  buildAppendedNote,
   buildTranscriptFilename,
   formatDuration,
   renderTranscriptNote,
@@ -99,18 +100,19 @@ test("saveTranscriptToFile creates dir + writes file with 和式 name", async ()
   const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings" };
 
   const saved = await saveTranscriptToFile(app, settings, "测试文本", 12, FIXED);
-  assert.equal(saved, "Clippings/議事録_2026年08月04日06時30分.md");
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月04日06時30分.md", appended: false });
   assert.equal(created.length, 1);
   assert.ok(files.get("Clippings")); // folder was created
 });
 
-test("saveTranscriptToFile dedupes filename collisions", async () => {
+test("saveTranscriptToFile dedupes filename collisions when append disabled", async () => {
   const existing = new Set<string>([
     "Clippings/議事録_2026年08月04日06時30分.md",
   ]);
   const created: string[] = [];
   const adapter = {
     exists: async (p: string) => existing.has(p),
+    read: async () => { throw new Error("read should not be called when append disabled"); },
   };
   const vault = {
     adapter,
@@ -121,10 +123,10 @@ test("saveTranscriptToFile dedupes filename collisions", async () => {
     },
   };
   const app = { vault } as any;
-  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings" };
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings", appendRecordEnabled: false };
 
   const saved = await saveTranscriptToFile(app, settings, "文本", 5, FIXED);
-  assert.equal(saved, "Clippings/議事録_2026年08月04日06時30分-2.md");
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月04日06時30分-2.md", appended: false });
   assert.equal(created.length, 1);
 });
 
@@ -145,5 +147,75 @@ test("saveTranscriptToFile falls back to Clippings when dir empty", async () => 
   const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "  /  " };
 
   const saved = await saveTranscriptToFile(app, settings, "文本", undefined, FIXED);
-  assert.equal(saved, "Clippings/議事録_2026年08月04日06時30分.md");
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月04日06時30分.md", appended: false });
+});
+
+/* ---------------- 追加録音（append） ---------------- */
+
+const LATER = new Date(2026, 7, 9, 4, 52, 0); // 2026-08-09 04:52
+
+test("buildAppendedNote inserts segment before 更新記録 and bumps version", () => {
+  const prev = renderTranscriptNote("議事録_2026年08月09日04時47分", FIXED, "最初の本文。", 60, "Clippings/x.md");
+  const out = buildAppendedNote(prev, "追加の内容。", 45, LATER);
+
+  const i1 = out.indexOf("最初の本文。");
+  const i2 = out.indexOf("## 🕐 追加録音");
+  const i3 = out.indexOf("## 📝 更新記録");
+  assert.ok(i1 !== -1 && i2 !== -1 && i3 !== -1 && i1 < i2 && i2 < i3, "転写本文→追加録音→更新記録の順");
+
+  assert.match(out, /追加の内容。/);
+  assert.match(out, /📝 文字数 \| 6 字/);
+  assert.match(out, /⏱️ 会議時間 \| 45 秒/);
+  assert.match(out, /v1\.0\.1 \| 2026-08-09 04:52 \| 追加録音/);
+  assert.match(out, /modified: 2026-08-09 04:52/);
+});
+
+test("buildAppendedNote increments patch version on repeated appends", () => {
+  let note = renderTranscriptNote("t", FIXED, "最初。", 60, "Clippings/x.md");
+  note = buildAppendedNote(note, "二回目。", 10, LATER);
+  note = buildAppendedNote(note, "三回目。", 10, LATER);
+  assert.match(note, /v1\.0\.1/);
+  assert.match(note, /v1\.0\.2/);
+  assert.equal(note.indexOf("二回目。") !== -1 && note.indexOf("三回目。") !== -1, true);
+});
+
+test("buildAppendedNote appends at end when 更新記録 section missing", () => {
+  const prev = "---\ntitle: \"old\"\nmodified: 2026-08-01 10:00\n---\n\n# old note\n\n旧本文\n";
+  const out = buildAppendedNote(prev, "追加分", undefined, LATER);
+  assert.match(out, /旧本文/);
+  assert.match(out, /## 🕐 追加録音/);
+  assert.match(out, /追加分/);
+  assert.match(out, /modified: 2026-08-09 04:52/); // modified は更新される
+});
+
+test("saveTranscriptToFile appends when enabled and same-minute file exists", async () => {
+  const prevContent = renderTranscriptNote(
+    "議事録_2026年08月04日06時30分", FIXED, "最初の転写。", 30, "Clippings/議事録_2026年08月04日06時30分.md"
+  );
+  const existing = new Map<string, string>([
+    ["Clippings/議事録_2026年08月04日06時30分.md", prevContent],
+    ["Clippings", ""],
+  ]);
+  const written: { path: string; content: string }[] = [];
+  const vault = {
+    adapter: {
+      exists: async (p: string) => existing.has(p),
+      read: async (p: string) => existing.get(p) ?? "",
+      write: async (p: string, content: string) => {
+        written.push({ path: p, content });
+        existing.set(p, content);
+      },
+    },
+    createFolder: async () => {},
+    create: async () => { throw new Error("create should not be called when appending"); },
+  };
+  const app = { vault } as any;
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings", appendRecordEnabled: true };
+
+  const saved = await saveTranscriptToFile(app, settings, "追加の転写。", 45, FIXED);
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月04日06時30分.md", appended: true });
+  assert.equal(written.length, 1);
+  assert.match(written[0].content, /最初の転写。/);
+  assert.match(written[0].content, /追加の転写。/);
+  assert.match(written[0].content, /## 🕐 追加録音/);
 });
