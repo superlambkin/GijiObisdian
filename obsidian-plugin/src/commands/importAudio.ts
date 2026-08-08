@@ -33,7 +33,7 @@ export function parseMinutesSections(output: string) {
 export async function transcribeAudioToMinutes(
   wav: ArrayBuffer,
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<string> {
   const chunks = splitWavBySeconds(wav, 600);
   const stt = createSttProvider(settings, fetchImpl);

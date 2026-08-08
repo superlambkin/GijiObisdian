@@ -37,7 +37,7 @@ class OpenAiCompatibleLlm implements LlmProvider {
 
 export function createLlmProvider(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): LlmProvider {
   if (settings.llmProvider === "ollama") {
     return new OpenAiCompatibleLlm("ollama", settings.llmBaseUrl, settings.llmModel, "", fetchImpl);

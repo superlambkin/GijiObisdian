@@ -10,7 +10,7 @@ export interface SttTestResult {
 
 export async function runSttTest(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<SttTestResult> {
   if (!settings.sttApiKey) return { ok: false, error: "请先填写 STT API Key" };
   try {

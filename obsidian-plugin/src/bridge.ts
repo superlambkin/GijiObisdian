@@ -1,4 +1,4 @@
-export async function bridgeHealth(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+export async function bridgeHealth(baseUrl: string, fetchImpl: typeof fetch = fetch.bind(globalThis)): Promise<boolean> {
   try {
     const res = await fetchImpl(`${baseUrl}/health`);
     return res.ok;
@@ -7,7 +7,7 @@ export async function bridgeHealth(baseUrl: string, fetchImpl: typeof fetch = fe
   }
 }
 
-export async function bridgeStart(baseUrl: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+export async function bridgeStart(baseUrl: string, fetchImpl: typeof fetch = fetch.bind(globalThis)): Promise<string> {
   const res = await fetchImpl(`${baseUrl}/record/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -21,7 +21,7 @@ export async function bridgeStart(baseUrl: string, fetchImpl: typeof fetch = fet
 export async function bridgeStop(
   baseUrl: string,
   sessionId: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<{ wavPath: string; durationSec: number }> {
   const res = await fetchImpl(`${baseUrl}/record/stop`, {
     method: "POST",

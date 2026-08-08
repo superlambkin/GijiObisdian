@@ -55,7 +55,7 @@ class OpenaiStt implements SttProvider {
 
 export function createSttProvider(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): SttProvider {
   switch (settings.sttProvider) {
     case "groq":

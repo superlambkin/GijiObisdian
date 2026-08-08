@@ -66,6 +66,36 @@ test("unsupported stt provider throws instead of silent fallback", () => {
   );
 });
 
+// Chromium（Obsidian レンダラー）の window.fetch は this !== window で
+// "Illegal invocation" を投げる。非バインド参照の持ち回りを防ぐ回帰テスト。
+function withBindingSensitiveFetch(run: () => Promise<void>) {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async function (this: unknown) {
+    if (this !== globalThis) {
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    }
+    return { ok: true, json: async () => ({ text: "ok" }) } as any;
+  }) as any;
+  return run().finally(() => {
+    globalThis.fetch = original;
+  });
+}
+
+test("default stt fetchImpl works with binding-sensitive fetch (chromium)", async () => {
+  await withBindingSensitiveFetch(async () => {
+    const stt = createSttProvider(groqSettings); // fetchImpl 省略 → デフォルト経路
+    const text = await stt.transcribe(new ArrayBuffer(4), "ja");
+    assert.equal(text, "ok");
+  });
+});
+
+test("default llm fetchImpl works with binding-sensitive fetch (chromium)", async () => {
+  await withBindingSensitiveFetch(async () => {
+    const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmApiKey: "k" });
+    await llm.complete("s", "u"); // Illegal invocation にならなければ OK
+  });
+});
+
 test("cloud llm posts chat completion", async () => {
   const calls: any[] = [];
   const fakeFetch = (async (url: any, opts: any) => {
