@@ -125,13 +125,17 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("録音ファイル名テンプレート")
-      .setDesc("録音 WAV のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .setDesc("録音ファイルの名前。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
       .addText((t) =>
         t.setValue(s.recordingFileNameTemplate).onChange(async (v: string) => {
           s.recordingFileNameTemplate = v;
           await this.save();
         })
       );
+
+    new Setting(containerEl)
+      .setName("録音フォーマット")
+      .setDesc("MP3 64 kbps（音声向け圧縮・16kHz モノラル）。Whisper の 25MB 制限のため、24MB 以上は自動分割して文字起こしします");
 
     new Setting(containerEl)
       .setName("📂 録音フォルダを開く")

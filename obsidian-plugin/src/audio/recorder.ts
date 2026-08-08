@@ -4,7 +4,7 @@ import { GijiSettings } from "../settings";
 import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
 import { renderTemplate } from "../notes/saver";
-import { splitWavBySeconds } from "./chunker";
+import { splitForTranscription } from "./chunker";
 
 export interface SegmentResult {
   text: string;
@@ -14,7 +14,7 @@ export interface SegmentResult {
 /**
  * 録音 WAV のファイル名をテンプレートから生成する。
  * 既定: `録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒`
- * （拡張子 .wav はブリッジ側で付与）
+ * （拡張子はブリッジ側で付与: 通常 .mp3、変換失敗時 .wav）
  */
 export function buildRecordingFileName(now: Date, template: string): string {
   return renderTemplate(now, template).replace(/[\\/:*?"<>|]/g, "-");
@@ -49,6 +49,18 @@ export class SegmentRecorder {
     }
   }
 
+  /** Vault 内は adapter、Vault 外の絶対パスは Node fs で読む */
+  private async readAudioFile(path: string): Promise<ArrayBuffer> {
+    const adapter = this.app.vault.adapter as any;
+    try {
+      return await adapter.readBinary(path);
+    } catch {
+      // 動的 import("fs") は Chromium が解決できないため静的 import 必須（e2e7f47 参照）。
+      const nodeBuf = readFileSync(path);
+      return nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength);
+    }
+  }
+
   async stop(settings: GijiSettings): Promise<SegmentResult | null> {
     if (!this.sessionId) {
       new Notice("当前没有进行中的录音");
@@ -57,25 +69,23 @@ export class SegmentRecorder {
     const sessionId = this.sessionId;
     this.sessionId = null;
     try {
-      const { wavPath, durationSec } = await bridgeStop(settings.bridgeBaseUrl, sessionId);
+      const result = await bridgeStop(settings.bridgeBaseUrl, sessionId);
+      if (result.warning === "mp3_encode_failed") {
+        new Notice("⚠️ MP3 変換に失敗したため WAV で保存しました（ffmpeg を確認してください）");
+      }
       new Notice("转写中…");
 
-      const adapter = this.app.vault.adapter as any;
-      let buf: ArrayBuffer;
-      try {
-        buf = await adapter.readBinary(wavPath);
-      } catch {
-        // vault 外の絶対パスは adapter が読めないため Node fs で読む。
-        // 動的 import("fs") は Chromium が解決できないため静的 import 必須（e2e7f47 参照）。
-        const nodeBuf = readFileSync(wavPath);
-        buf = nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength);
-      }
-
+      const paths = result.audioPaths?.length ? result.audioPaths : [result.wavPath!];
       const stt = createSttProvider(settings);
-      const chunks = splitWavBySeconds(buf, stt.maxChunkSec ?? 600);
       const parts: string[] = [];
-      for (const c of chunks) parts.push(await stt.transcribe(c, settings.sttLang));
-      return { text: parts.join("\n\n"), durationSec };
+      for (const path of paths) {
+        const buf = await this.readAudioFile(path);
+        // プロバイダー制約に応じて分割（24MB 超 / Google 55 秒等）
+        for (const chunk of splitForTranscription(buf, stt)) {
+          parts.push(await stt.transcribe(chunk, settings.sttLang));
+        }
+      }
+      return { text: parts.join("\n\n"), durationSec: result.durationSec };
     } catch (err: any) {
       new Notice(`${err?.message ?? err}`);
       throw err;

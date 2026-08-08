@@ -1,10 +1,12 @@
 import { GijiSettings, SttLang } from "../settings";
-import { readWavHeader } from "../audio/chunker";
+import { isWav, readWavHeader, MAX_TRANSCRIPTION_BYTES } from "../audio/chunker";
 
 export interface SttProvider {
   id: string;
-  /** プロバイダーの同期 API 制限に応じた最大チャンク秒数（省略時は 600 秒で分割） */
+  /** WAV 時間分割が必要なプロバイダーの最大チャンク秒数（例: Google 同期 API 55 秒） */
   maxChunkSec?: number;
+  /** 1 リクエストの最大バイト数（省略時は 24MB: Whisper 25MB 制限対策） */
+  maxBytesPerRequest?: number;
   transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string>;
 }
 
@@ -13,9 +15,14 @@ class GroqStt implements SttProvider {
   constructor(private apiKey: string, private fetchImpl: typeof fetch) {}
 
   async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
+    const wav = isWav(audio);
     const form = new FormData();
     form.append("model", "whisper-large-v3-turbo");
-    form.append("file", new Blob([audio], { type: "audio/wav" }), "audio.wav");
+    form.append(
+      "file",
+      new Blob([audio], { type: wav ? "audio/wav" : "audio/mpeg" }),
+      wav ? "audio.wav" : "audio.mp3"
+    );
     if (lang !== "auto") form.append("language", lang);
 
     const res = await this.fetchImpl(
@@ -37,9 +44,14 @@ class OpenaiStt implements SttProvider {
   constructor(private apiKey: string, private fetchImpl: typeof fetch) {}
 
   async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
+    const wav = isWav(audio);
     const form = new FormData();
     form.append("model", "whisper-1");
-    form.append("file", new Blob([audio], { type: "audio/wav" }), "audio.wav");
+    form.append(
+      "file",
+      new Blob([audio], { type: wav ? "audio/wav" : "audio/mpeg" }),
+      wav ? "audio.wav" : "audio.mp3"
+    );
     if (lang !== "auto") form.append("language", lang);
 
     const res = await this.fetchImpl(
@@ -56,14 +68,28 @@ class OpenaiStt implements SttProvider {
   }
 }
 
+/** MP3 フレームヘッダからサンプルレートを読み取る（不明な場合は null） */
+function mp3SampleRate(bytes: Uint8Array): number | null {
+  for (let i = 0; i < Math.min(bytes.length - 4, 4096); i++) {
+    if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
+    const version = (bytes[i + 1] >> 3) & 0x03; // 0=MPEG2.5, 2=MPEG2, 3=MPEG1
+    const srIdx = (bytes[i + 2] >> 2) & 0x03;
+    if (version === 1 || srIdx === 3) return null;
+    const base = [44100, 48000, 32000][srIdx];
+    return version === 3 ? base : version === 2 ? base / 2 : base / 4;
+  }
+  return null;
+}
+
 /**
  * Google Cloud Speech-to-Text v1 同期 API（speech:recognize）。
- * API キー認証・LINEAR16 PCM・base64 インライン音声。
- * 同期 API は約 60 秒までのため maxChunkSec = 55 で分割する。
+ * API キー認証・base64 インライン音声。WAV は LINEAR16、MP3 は MP3 encoding。
+ * 同期 API は約 60 秒までのため、WAV は 55 秒・MP3 は 400KB（64kbps ≈ 50 秒）で分割する。
  */
 class GoogleStt implements SttProvider {
   id = "google";
   maxChunkSec = 55;
+  maxBytesPerRequest = 400_000;
   constructor(private apiKey: string, private fetchImpl: typeof fetch) {}
 
   /** Google 同期 API は languageCode 必須（自動検出は不可）のため auto は日本語に寄せる */
@@ -81,8 +107,20 @@ class GoogleStt implements SttProvider {
   }
 
   async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
-    const { sampleRate, dataOffset, dataLength } = readWavHeader(audio);
-    const pcm = audio.slice(dataOffset, dataOffset + dataLength);
+    const wav = isWav(audio);
+    let encoding: string;
+    let sampleRateHertz: number;
+    let payload: ArrayBuffer;
+    if (wav) {
+      const { sampleRate, dataOffset, dataLength } = readWavHeader(audio);
+      encoding = "LINEAR16";
+      sampleRateHertz = sampleRate;
+      payload = audio.slice(dataOffset, dataOffset + dataLength); // ヘッダ除去した PCM
+    } else {
+      encoding = "MP3";
+      sampleRateHertz = mp3SampleRate(new Uint8Array(audio)) ?? 16000;
+      payload = audio; // MP3 はフレーム列ごと送る
+    }
 
     const res = await this.fetchImpl(
       `https://speech.googleapis.com/v1/speech:recognize?key=${this.apiKey}`,
@@ -91,12 +129,12 @@ class GoogleStt implements SttProvider {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           config: {
-            encoding: "LINEAR16",
-            sampleRateHertz: sampleRate,
+            encoding,
+            sampleRateHertz,
             languageCode: this.langCode(lang),
             enableAutomaticPunctuation: true,
           },
-          audio: { content: arrayBufferToBase64(pcm) },
+          audio: { content: arrayBufferToBase64(payload) },
         }),
       }
     );

@@ -29,11 +29,21 @@ export async function bridgeStart(
   return data.sessionId;
 }
 
+export interface BridgeStopResult {
+  /** 保存された音声ファイル一覧（MP3 64kbps、24MB 超は複数セグメント） */
+  audioPaths: string[];
+  durationSec: number;
+  /** 後方互換: 先頭ファイルのパス */
+  wavPath?: string;
+  /** "mp3_encode_failed": MP3 変換失敗で WAV フォールバック */
+  warning?: string;
+}
+
 export async function bridgeStop(
   baseUrl: string,
   sessionId: string,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
-): Promise<{ wavPath: string; durationSec: number }> {
+): Promise<BridgeStopResult> {
   const res = await fetchImpl(`${baseUrl}/record/stop`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

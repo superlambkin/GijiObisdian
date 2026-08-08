@@ -1,7 +1,7 @@
 import { GijiSettings } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { createLlmProvider } from "../providers/llm";
-import { splitWavBySeconds } from "../audio/chunker";
+import { splitForTranscription } from "../audio/chunker";
 import { renderMinutes, MINUTES_SYSTEM_PROMPT } from "../notes/generator";
 import { buildTemplateSystemPrompt } from "../notes/minutesTemplate";
 
@@ -37,8 +37,8 @@ export async function transcribeAudio(
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<string> {
   const stt = createSttProvider(settings, fetchImpl);
-  // Google 等の同期 API 制限に応じてチャンク秒数を可変にする
-  const chunks = splitWavBySeconds(wav, stt.maxChunkSec ?? 600);
+  // プロバイダー制約に応じて分割（Whisper 25MB → 24MB / Google 55 秒・400KB）
+  const chunks = splitForTranscription(wav, stt);
   const parts: string[] = [];
   try {
     for (const chunk of chunks) {

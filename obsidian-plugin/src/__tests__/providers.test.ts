@@ -76,6 +76,9 @@ function makeTinyWav(): ArrayBuffer {
   const pcm = new Uint8Array([0, 0, 1, 0]);
   const buf = new ArrayBuffer(44 + pcm.length);
   const v = new DataView(buf);
+  const writeStr = (o: number, s: string) => s.split("").forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  writeStr(0, "RIFF");
+  writeStr(8, "WAVE");
   v.setUint32(24, 16000, true); // sampleRate
   v.setUint32(40, pcm.length, true); // dataLength
   new Uint8Array(buf).set(pcm, 44);
@@ -121,6 +124,37 @@ test("google provider throws on http error", async () => {
   const fakeFetch = (async () => ({ ok: false, status: 403, text: async () => "forbidden" })) as any;
   const stt = createSttProvider(googleSettings, fakeFetch);
   await assert.rejects(() => stt.transcribe(makeTinyWav(), "ja"), /403/);
+});
+
+/* ---------------- MP3 入力（24MB 分割後のセグメント等） ---------------- */
+
+test("openai provider sends mp3 filename/mime for non-WAV audio", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (_url: any, opts: any) => {
+    calls.push(opts);
+    return { ok: true, json: async () => ({ text: "ok" }) } as any;
+  }) as any;
+  const stt = createSttProvider(openaiSettings, fakeFetch);
+  await stt.transcribe(new Uint8Array([0xff, 0xf3, 0x08, 0x00, 1, 2, 3]).buffer, "ja");
+  const file = (calls[0].body as FormData).get("file") as any;
+  assert.equal(file.name, "audio.mp3");
+  assert.equal(file.type, "audio/mpeg");
+});
+
+test("google provider uses MP3 encoding + frame sample rate for non-WAV audio", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (_url: any, opts: any) => {
+    calls.push(opts);
+    return { ok: true, json: async () => ({ results: [] }) } as any;
+  }) as any;
+  const stt = createSttProvider(googleSettings, fakeFetch);
+  // MPEG2 / 16kHz のフレームヘッダ（0xFF 0xF3 0x08）
+  await stt.transcribe(new Uint8Array([0xff, 0xf3, 0x08, 0x00, 1, 2, 3]).buffer, "ja");
+  const body = JSON.parse(calls[0].body);
+  assert.equal(body.config.encoding, "MP3");
+  assert.equal(body.config.sampleRateHertz, 16000);
+  // MP3 はバッファ全体を base64 化（ヘッダ除去しない）
+  assert.equal(body.audio.content, btoa(String.fromCharCode(0xff, 0xf3, 0x08, 0x00, 1, 2, 3)));
 });
 
 // Chromium（Obsidian レンダラー）の window.fetch は this !== window で
