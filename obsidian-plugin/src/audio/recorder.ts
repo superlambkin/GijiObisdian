@@ -3,11 +3,21 @@ import { readFileSync } from "fs";
 import { GijiSettings } from "../settings";
 import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
+import { renderTemplate } from "../notes/saver";
 import { splitWavBySeconds } from "./chunker";
 
 export interface SegmentResult {
   text: string;
   durationSec: number;
+}
+
+/**
+ * 録音 WAV のファイル名をテンプレートから生成する。
+ * 既定: `録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒`
+ * （拡張子 .wav はブリッジ側で付与）
+ */
+export function buildRecordingFileName(now: Date, template: string): string {
+  return renderTemplate(now, template).replace(/[\\/:*?"<>|]/g, "-");
 }
 
 export class SegmentRecorder {
@@ -26,7 +36,11 @@ export class SegmentRecorder {
         new Notice("录音桥未启动，请先运行 recorder-bridge");
         return false;
       }
-      this.sessionId = await bridgeStart(settings.bridgeBaseUrl);
+      const outDir = (settings.recordingSaveDir || "").trim() || undefined;
+      const fileName = (settings.recordingFileNameTemplate || "").trim()
+        ? buildRecordingFileName(new Date(), settings.recordingFileNameTemplate)
+        : undefined;
+      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, { outDir, fileName });
       return true;
     } catch (err: any) {
       this.sessionId = null;
@@ -58,7 +72,7 @@ export class SegmentRecorder {
       }
 
       const stt = createSttProvider(settings);
-      const chunks = splitWavBySeconds(buf, 600);
+      const chunks = splitWavBySeconds(buf, stt.maxChunkSec ?? 600);
       const parts: string[] = [];
       for (const c of chunks) parts.push(await stt.transcribe(c, settings.sttLang));
       return { text: parts.join("\n\n"), durationSec };

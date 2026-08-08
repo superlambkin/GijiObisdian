@@ -6,8 +6,8 @@ const pad = (n: number) => n.toString().padStart(2, "0");
 /** MD生成ルールの適用バージョン（生成物に記録する） */
 const APPLIED_RULES_VERSION = "2.11.0";
 
-/** テンプレートの占位符を日時値で置き換える（サニタイズなしの内部関数） */
-function renderTemplate(now: Date, template: string): string {
+/** テンプレートの占位符を日時値で置き換える（サニタイズは呼び出し側で行う） */
+export function renderTemplate(now: Date, template: string): string {
   const values: Record<string, string> = {
     year: String(now.getFullYear()),
     month: pad(now.getMonth() + 1),

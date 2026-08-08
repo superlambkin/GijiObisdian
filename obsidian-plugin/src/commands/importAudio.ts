@@ -3,6 +3,7 @@ import { createSttProvider } from "../providers/stt";
 import { createLlmProvider } from "../providers/llm";
 import { splitWavBySeconds } from "../audio/chunker";
 import { renderMinutes, MINUTES_SYSTEM_PROMPT } from "../notes/generator";
+import { buildTemplateSystemPrompt } from "../notes/minutesTemplate";
 
 export function parseMinutesSections(output: string) {
   const findLabel = (label: string, startAt = 0): number => {
@@ -30,13 +31,14 @@ export function parseMinutesSections(output: string) {
   };
 }
 
-export async function transcribeAudioToMinutes(
+export async function transcribeAudio(
   wav: ArrayBuffer,
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<string> {
-  const chunks = splitWavBySeconds(wav, 600);
   const stt = createSttProvider(settings, fetchImpl);
+  // Google 等の同期 API 制限に応じてチャンク秒数を可変にする
+  const chunks = splitWavBySeconds(wav, stt.maxChunkSec ?? 600);
   const parts: string[] = [];
   try {
     for (const chunk of chunks) {
@@ -45,9 +47,29 @@ export async function transcribeAudioToMinutes(
   } catch (err: any) {
     throw new Error(`转写失败: ${err?.message ?? String(err)}`, { cause: err });
   }
-  const transcript = parts.join("\n\n");
+  return parts.join("\n\n");
+}
+
+export async function transcribeAudioToMinutes(
+  wav: ArrayBuffer,
+  settings: GijiSettings,
+  fetchImpl: typeof fetch = fetch.bind(globalThis),
+  templateMd?: string
+): Promise<string> {
+  const transcript = await transcribeAudio(wav, settings, fetchImpl);
 
   const llm = createLlmProvider(settings, fetchImpl);
+  if (templateMd) {
+    // テンプレート指定時: LLM にテンプレート構造の議事録 MD を直接生成させる
+    let md: string;
+    try {
+      md = await llm.complete(buildTemplateSystemPrompt(templateMd), transcript);
+    } catch (err: any) {
+      throw new Error(`纪要生成失败: ${err?.message ?? String(err)}`, { cause: err });
+    }
+    return md.trim() + "\n";
+  }
+
   let llmOut: string;
   try {
     llmOut = await llm.complete(MINUTES_SYSTEM_PROMPT, transcript);

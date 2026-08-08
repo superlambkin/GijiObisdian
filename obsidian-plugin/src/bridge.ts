@@ -7,11 +7,22 @@ export async function bridgeHealth(baseUrl: string, fetchImpl: typeof fetch = fe
   }
 }
 
-export async function bridgeStart(baseUrl: string, fetchImpl: typeof fetch = fetch.bind(globalThis)): Promise<string> {
+export interface BridgeStartOptions {
+  /** 録音ファイルの保存場所（PC 絶対パス）。省略時はブリッジの temp 保存 */
+  outDir?: string;
+  /** 録音ファイル名（拡張子 .wav はブリッジ側で付与）。省略時は giji_<sessionId> */
+  fileName?: string;
+}
+
+export async function bridgeStart(
+  baseUrl: string,
+  opts: BridgeStartOptions = {},
+  fetchImpl: typeof fetch = fetch.bind(globalThis)
+): Promise<string> {
   const res = await fetchImpl(`${baseUrl}/record/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format: "wav" }),
+    body: JSON.stringify({ format: "wav", outDir: opts.outDir, fileName: opts.fileName }),
   });
   if (!res.ok) throw new Error(`bridge start ${res.status}`);
   const data = await res.json();

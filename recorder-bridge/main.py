@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -20,6 +22,9 @@ _recorder = Recorder()
 
 class StartReq(BaseModel):
     format: str = "wav"
+    # プラグイン設定「録音ファイルの保存場所」「録音ファイル名テンプレート」から渡される
+    outDir: Optional[str] = None
+    fileName: Optional[str] = None
 
 
 class StopReq(BaseModel):
@@ -34,7 +39,7 @@ def health():
 @app.post("/record/start")
 def record_start(req: StartReq):
     try:
-        sid = _recorder.start()
+        sid = _recorder.start(out_dir=req.outDir, file_name=req.fileName)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"recording": True, "sessionId": sid}

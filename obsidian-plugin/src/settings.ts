@@ -1,43 +1,68 @@
+import { homedir } from "os";
+import { join } from "path";
+import { mkdirSync } from "fs";
+
 export type SttLang = "auto" | "zh" | "ja" | "en";
-export type SttProviderId = "groq" | "openai" | "doubao";
-export type LlmProviderId = "cloud" | "ollama";
+export type SttProviderId = "openai" | "google" | "groq";
+export type LlmProviderId = "claudian" | "cloud" | "ollama";
+export type MinutesTemplateSource = "vault" | "directory";
 
 export interface GijiSettings {
+  // ② 文字起こし
   sttProvider: SttProviderId;
   sttApiKey: string;
   sttLang: SttLang;
+  // ③ 要約
   llmProvider: LlmProviderId;
   llmBaseUrl: string;
   llmModel: string;
   llmApiKey: string;
-  bridgeBaseUrl: string;
-  bridgeDir: string;
-  minutesTemplate: string;
   outputDir: string;
   keepTranscript: boolean;
+  minutesTemplateSource: MinutesTemplateSource;
+  minutesTemplateVaultPath: string;
+  minutesTemplateFile: string;
+  // ① 録音
+  bridgeBaseUrl: string;
+  bridgeDir: string;
+  recordingSaveDir: string;
+  recordingFileNameTemplate: string;
+  appendRecordEnabled: boolean;
+  // ② 文字起こし（保存・挿入）
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
   fileNameTemplate: string;
-  appendRecordEnabled: boolean;
+  insertToClaudianEnabled: boolean;
+  // ④ その他
+  emailSummaryEnabled: boolean;
 }
 
+/** 録音ファイル保存場所のデフォルト（PC の絶対パス: C:\Users\<ユーザ名>\Music\GijiObsidian） */
+export const DEFAULT_RECORDING_SAVE_DIR = join(homedir(), "Music", "GijiObsidian");
+
 export const DEFAULT_SETTINGS: GijiSettings = {
-  sttProvider: "groq",
+  sttProvider: "openai",
   sttApiKey: "",
   sttLang: "auto",
-  llmProvider: "cloud",
+  llmProvider: "claudian",
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmModel: "deepseek-chat",
   llmApiKey: "",
+  outputDir: "Clippings",
+  keepTranscript: true,
+  minutesTemplateSource: "vault",
+  minutesTemplateVaultPath: "00_Vault管理/議事録テンプレート.md",
+  minutesTemplateFile: "議事録テンプレート.md",
   bridgeBaseUrl: "http://127.0.0.1:17890",
   bridgeDir: "D:\\AI-Agent\\giji-obsidian\\recorder-bridge",
-  minutesTemplate: "",
-  outputDir: "📋 纪要",
-  keepTranscript: true,
+  recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
+  recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
+  appendRecordEnabled: true,
   autoSaveTranscript: true,
   transcriptSaveDir: "Clippings",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
-  appendRecordEnabled: true,
+  insertToClaudianEnabled: true,
+  emailSummaryEnabled: false,
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
@@ -48,213 +73,323 @@ export class GijiSettingsTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  display(): void {
+  private async save(): Promise<void> {
+    await this.plugin.saveSettings();
+  }
+
+  async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "GijiObsidian 设置" });
+    const version = this.plugin.manifest?.version ?? "0.0.0";
+    containerEl.createEl("h2", { text: `GijiObsidian 設定（v${version}）` });
     containerEl.createEl("p", {
-      text: "按工作流程分类：① 录音 → ② 转写 → ③ 纪要生成 → ④ 其他",
+      text: "作業手順の時系列で分類：① 録音 → ② 文字起こし → ③ 要約 → ④ その他",
       cls: "setting-item-description",
     });
 
-    /* ==================== ① 🎙️ 录音（録音） ==================== */
+    const s = this.plugin.settings as GijiSettings;
+
+    /* ==================== ① 🎙️ 録音 ==================== */
     new Setting(containerEl)
-      .setName("① 🎙️ 录音")
-      .setDesc("麦克风 → 本地录音桥（Python FastAPI）录制 WAV")
+      .setName("① 🎙️ 録音")
+      .setDesc("マイク → ローカル録音ブリッジ（Python FastAPI）で WAV を録音します")
       .setHeading();
 
     new Setting(containerEl)
-      .setName("录音桥地址")
+      .setName("ブリッジ URL")
       .addText((t) =>
-        t.setValue(this.plugin.settings.bridgeBaseUrl).onChange(async (v: string) => {
-          this.plugin.settings.bridgeBaseUrl = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.bridgeBaseUrl).onChange(async (v: string) => {
+          s.bridgeBaseUrl = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("录音桥目录")
+      .setName("ブリッジのディレクトリ")
       .addText((t) =>
-        t.setValue(this.plugin.settings.bridgeDir).onChange(async (v: string) => {
-          this.plugin.settings.bridgeDir = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.bridgeDir).onChange(async (v: string) => {
+          s.bridgeDir = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("追加录音")
-      .setDesc("开启后，同一小时（年月日時相同）内开始的录音将追加到该小时最早的议事录文件中")
+      .setName("録音ファイルの保存場所")
+      .setDesc(`PC の絶対パス（デフォルト: ${DEFAULT_RECORDING_SAVE_DIR}）`)
+      .addText((t) =>
+        t.setValue(s.recordingSaveDir).onChange(async (v: string) => {
+          s.recordingSaveDir = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("録音ファイル名テンプレート")
+      .setDesc("録音 WAV のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .addText((t) =>
+        t.setValue(s.recordingFileNameTemplate).onChange(async (v: string) => {
+          s.recordingFileNameTemplate = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("📂 録音フォルダを開く")
+      .setDesc("録音ファイルの保存場所をエクスプローラーで開きます（無ければ作成）")
+      .addButton((btn) =>
+        btn.setButtonText("開く").onClick(async () => {
+          const dir = (s.recordingSaveDir || "").trim() || DEFAULT_RECORDING_SAVE_DIR;
+          try {
+            mkdirSync(dir, { recursive: true });
+            // 遅延 require: 静的 import だと Node テスト環境で electron を解決できないため
+            const { shell } = require("electron");
+            const err = await shell.openPath(dir);
+            if (err) new Notice(`フォルダを開けませんでした: ${err}`);
+          } catch (e: any) {
+            new Notice(`フォルダを開けませんでした: ${e?.message ?? e}`);
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("追加録音")
+      .setDesc("ON の場合、同じ時間（年月日時が同一）に開始した録音は、その時間の最早の議事録 MD に追記されます")
       .addToggle((t) =>
-        t
-          .setValue(this.plugin.settings.appendRecordEnabled)
-          .onChange(async (v: boolean) => {
-            this.plugin.settings.appendRecordEnabled = v;
-            await this.plugin.saveSettings();
-          })
+        t.setValue(s.appendRecordEnabled).onChange(async (v: boolean) => {
+          s.appendRecordEnabled = v;
+          await this.save();
+        })
       );
 
-    /* ==================== ② 📝 转写（文字起こし） ==================== */
+    /* ==================== ② 📝 文字起こし ==================== */
     new Setting(containerEl)
-      .setName("② 📝 转写")
-      .setDesc("WAV → 云 STT 转文字，自动保存为议事录 MD")
+      .setName("② 📝 文字起こし")
+      .setDesc("WAV → クラウド STT で文字起こし → 議事録 MD として自動保存します")
       .setHeading();
 
     new Setting(containerEl)
-      .setName("STT Provider")
+      .setName("STT プロバイダー")
       .addDropdown((d) =>
-        d.addOption("groq", "Groq Whisper")
-          .addOption("openai", "OpenAI Whisper")
-          .addOption("doubao", "豆包")
-          .setValue(this.plugin.settings.sttProvider)
+        d.addOption("openai", "OpenAI（デフォルト）")
+          .addOption("google", "Google")
+          .addOption("groq", "Groq")
+          .setValue(s.sttProvider)
           .onChange(async (v: string) => {
-            this.plugin.settings.sttProvider = v;
-            await this.plugin.saveSettings();
+            s.sttProvider = v as SttProviderId;
+            await this.save();
           })
       );
 
     new Setting(containerEl)
-      .setName("STT API Key")
+      .setName("STT API キー")
       .addText((t) =>
-        t.setValue(this.plugin.settings.sttApiKey).onChange(async (v: string) => {
-          this.plugin.settings.sttApiKey = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.sttApiKey).onChange(async (v: string) => {
+          s.sttApiKey = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("语言")
+      .setName("言語")
       .addDropdown((d) =>
-        d.addOption("auto", "自动检测")
-          .addOption("zh", "中文")
+        d.addOption("auto", "自動検出")
           .addOption("ja", "日本語")
+          .addOption("zh", "中文")
           .addOption("en", "English")
-          .setValue(this.plugin.settings.sttLang)
+          .setValue(s.sttLang)
           .onChange(async (v: string) => {
-            this.plugin.settings.sttLang = v as any;
-            await this.plugin.saveSettings();
+            s.sttLang = v as SttLang;
+            await this.save();
           })
       );
 
     new Setting(containerEl)
-      .setName("自动保存转写为 MD")
-      .setDesc("录音转文本后自动保存为 Markdown 文档")
+      .setName("🔌 接続テスト")
+      .setDesc("内蔵の音声サンプルで ② 文字起こしの設定が使えるか検証します")
+      .addButton((btn) =>
+        btn.setButtonText("テスト開始").onClick(async () => {
+          btn.setDisabled(true).setButtonText("テスト中…");
+          try {
+            const res = await runSttTest(s);
+            if (res.ok) new Notice(`✅ 文字起こし成功: ${res.text}`);
+            else new Notice(`❌ テスト失敗: ${res.error}`);
+          } finally {
+            btn.setDisabled(false).setButtonText("テスト開始");
+          }
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("結果を Claudian 入力欄に挿入")
+      .setDesc("ON の場合、文字起こし後のテキストを Claudian の入力欄に表示します（デフォルト: ON）")
       .addToggle((t) =>
-        t
-          .setValue(this.plugin.settings.autoSaveTranscript)
-          .onChange(async (v: boolean) => {
-            this.plugin.settings.autoSaveTranscript = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("转写保存目录")
-      .setDesc("转写 MD 在 OB 内的保存位置（默认 Clippings）")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.transcriptSaveDir).onChange(async (v: string) => {
-          this.plugin.settings.transcriptSaveDir = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.insertToClaudianEnabled).onChange(async (v: boolean) => {
+          s.insertToClaudianEnabled = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("文件名模板")
-      .setDesc("转写 MD 的文件名。占位符: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.fileNameTemplate).onChange(async (v: string) => {
-          this.plugin.settings.fileNameTemplate = v;
-          await this.plugin.saveSettings();
+      .setName("転写を自動保存")
+      .setDesc("録音の文字起こし後、Markdown 文書として自動保存します")
+      .addToggle((t) =>
+        t.setValue(s.autoSaveTranscript).onChange(async (v: boolean) => {
+          s.autoSaveTranscript = v;
+          await this.save();
         })
       );
 
-    /* ==================== ③ 🤖 纪要生成（要約） ==================== */
     new Setting(containerEl)
-      .setName("③ 🤖 纪要生成")
-      .setDesc("转写文本 → LLM 生成会议纪要（「导入音频生成会议纪要」命令使用）")
+      .setName("転写の保存先")
+      .setDesc("転写 MD の Vault 内保存先（デフォルト: Clippings）")
+      .addText((t) =>
+        t.setValue(s.transcriptSaveDir).onChange(async (v: string) => {
+          s.transcriptSaveDir = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("転写ファイル名テンプレート")
+      .setDesc("転写 MD のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .addText((t) =>
+        t.setValue(s.fileNameTemplate).onChange(async (v: string) => {
+          s.fileNameTemplate = v;
+          await this.save();
+        })
+      );
+
+    /* ==================== ③ 🤖 要約 ==================== */
+    new Setting(containerEl)
+      .setName("③ 🤖 要約")
+      .setDesc("転写テキスト → LLM で議事録を生成します（「音声をインポートして議事録生成」コマンドで使用）")
       .setHeading();
 
     new Setting(containerEl)
-      .setName("LLM 提供商")
+      .setName("LLM プロバイダー")
+      .setDesc("Claudian（デフォルト）: 既存 Claudian の LLM に要約プロンプトを挿入します")
       .addDropdown((d) =>
-        d.addOption("cloud", "云端（OpenAI 兼容 API）")
-          .addOption("ollama", "Ollama（本地）")
-          .setValue(this.plugin.settings.llmProvider)
+        d.addOption("claudian", "Claudian（デフォルト）")
+          .addOption("cloud", "クラウド（OpenAI 互換 API）")
+          .addOption("ollama", "Ollama（ローカル）")
+          .setValue(s.llmProvider)
           .onChange(async (v: string) => {
-            this.plugin.settings.llmProvider = v;
-            await this.plugin.saveSettings();
+            s.llmProvider = v as LlmProviderId;
+            await this.save();
           })
       );
 
     new Setting(containerEl)
       .setName("LLM baseUrl")
+      .setDesc("クラウド / Ollama 選択時に使用")
       .addText((t) =>
-        t.setValue(this.plugin.settings.llmBaseUrl).onChange(async (v: string) => {
-          this.plugin.settings.llmBaseUrl = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.llmBaseUrl).onChange(async (v: string) => {
+          s.llmBaseUrl = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("LLM 模型")
-      .setDesc("例: deepseek-chat / gpt-4o-mini / qwen2.5 等")
+      .setName("LLM モデル")
+      .setDesc("例: deepseek-chat / gpt-4o-mini / qwen2.5 など")
       .addText((t) =>
-        t.setValue(this.plugin.settings.llmModel).onChange(async (v: string) => {
-          this.plugin.settings.llmModel = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.llmModel).onChange(async (v: string) => {
+          s.llmModel = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("LLM API Key")
-      .setDesc("Ollama（本地）时无需填写")
+      .setName("LLM API キー")
+      .setDesc("Ollama（ローカル）の場合は不要です")
       .addText((t) =>
-        t.setValue(this.plugin.settings.llmApiKey).onChange(async (v: string) => {
-          this.plugin.settings.llmApiKey = v;
-          await this.plugin.saveSettings();
+        t.setValue(s.llmApiKey).onChange(async (v: string) => {
+          s.llmApiKey = v;
+          await this.save();
         })
       );
 
     new Setting(containerEl)
-      .setName("纪要保存目录")
-      .setDesc("生成的会议纪要 MD 在 OB 内的保存位置（默认 📋 纪要）")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.outputDir).onChange(async (v: string) => {
-          this.plugin.settings.outputDir = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("纪要附带转写原文")
-      .setDesc("开启后，生成的会议纪要 MD 末尾附带完整转写原文")
-      .addToggle((t) =>
-        t
-          .setValue(this.plugin.settings.keepTranscript)
-          .onChange(async (v: boolean) => {
-            this.plugin.settings.keepTranscript = v;
-            await this.plugin.saveSettings();
+      .setName("議事録テンプレートの場所")
+      .setDesc("Vault 内の MD か、プラグインディレクトリのテンプレートフォルダから選択します")
+      .addDropdown((d) =>
+        d.addOption("vault", "Vault（デフォルト）")
+          .addOption("directory", "プラグインディレクトリ")
+          .setValue(s.minutesTemplateSource)
+          .onChange(async (v: string) => {
+            s.minutesTemplateSource = v as MinutesTemplateSource;
+            await this.save();
+            await this.display(); // 入力欄を切り替えるため再描画
           })
       );
 
-    /* ==================== ④ ⚙️ 其他（その他） ==================== */
+    if (s.minutesTemplateSource === "directory") {
+      const templatesDir = `${this.plugin.manifest.dir}/templates`;
+      const setting = new Setting(containerEl)
+        .setName("テンプレートファイル")
+        .setDesc(`${templatesDir} 内の MD ファイルから選択します`);
+      try {
+        const listed = await this.app.vault.adapter.list(templatesDir);
+        const files = (listed.files as string[])
+          .filter((f) => f.endsWith(".md"))
+          .map((f) => f.split("/").pop() ?? f)
+          .sort();
+        setting.addDropdown((d) => {
+          for (const f of files) d.addOption(f, f);
+          if (files.length === 0) d.addOption("", "（テンプレートがありません）");
+          d.setValue(files.includes(s.minutesTemplateFile) ? s.minutesTemplateFile : files[0] ?? "")
+            .onChange(async (v: string) => {
+              s.minutesTemplateFile = v;
+              await this.save();
+            });
+        });
+      } catch {
+        setting.setDesc(`⚠️ ${templatesDir} を読み込めませんでした（プラグイン再読み込みで作成されます）`);
+      }
+    } else {
+      new Setting(containerEl)
+        .setName("テンプレートのパス")
+        .setDesc("Vault 内のテンプレート MD（デフォルト: 00_Vault管理/議事録テンプレート.md）")
+        .addText((t) =>
+          t.setValue(s.minutesTemplateVaultPath).onChange(async (v: string) => {
+            s.minutesTemplateVaultPath = v;
+            await this.save();
+          })
+        );
+    }
+
     new Setting(containerEl)
-      .setName("④ ⚙️ 其他")
-      .setDesc("诊断工具")
+      .setName("議事録の保存先")
+      .setDesc("生成した議事録 MD の Vault 内保存先（デフォルト: Clippings）")
+      .addText((t) =>
+        t.setValue(s.outputDir).onChange(async (v: string) => {
+          s.outputDir = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("議事録に転写原文を含める")
+      .setDesc("ON の場合、生成した議事録 MD に完全な転写原文を添付します")
+      .addToggle((t) =>
+        t.setValue(s.keepTranscript).onChange(async (v: boolean) => {
+          s.keepTranscript = v;
+          await this.save();
+        })
+      );
+
+    /* ==================== ④ ⚙️ その他 ==================== */
+    new Setting(containerEl)
+      .setName("④ ⚙️ その他")
       .setHeading();
 
     new Setting(containerEl)
-      .setName("🧪 测试转写")
-      .setDesc("用内置语音样本验证 ② 转写设置是否可用")
-      .addButton((btn) =>
-        btn.setButtonText("开始测试").onClick(async () => {
-          btn.setDisabled(true).setButtonText("测试中…");
-          try {
-            const res = await runSttTest(this.plugin.settings);
-            if (res.ok) new Notice(`✅ 转写成功: ${res.text}`);
-            else new Notice(`❌ 测试失败: ${res.error}`);
-          } finally {
-            btn.setDisabled(false).setButtonText("开始测试");
-          }
+      .setName("要約メール添付")
+      .setDesc("（準備中）要約生成後にメールへ添付して送信します（デフォルト: OFF）")
+      .addToggle((t) =>
+        t.setValue(s.emailSummaryEnabled).onChange(async (v: boolean) => {
+          s.emailSummaryEnabled = v;
+          await this.save();
         })
       );
   }

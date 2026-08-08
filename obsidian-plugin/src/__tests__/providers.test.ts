@@ -61,9 +61,66 @@ test("openai provider throws on http error", async () => {
 
 test("unsupported stt provider throws instead of silent fallback", () => {
   assert.throws(
-    () => createSttProvider({ ...DEFAULT_SETTINGS, sttProvider: "doubao" as const, sttApiKey: "k" }),
+    // 廃止プロバイダー（doubao 等）も黙ってフォールバックせず throw すること
+    () => createSttProvider({ ...DEFAULT_SETTINGS, sttProvider: "doubao" as any, sttApiKey: "k" }),
     /未対応|unsupported/i
   );
+});
+
+/* ---------------- Google STT（Cloud Speech-to-Text v1 同期 API） ---------------- */
+
+const googleSettings = { ...DEFAULT_SETTINGS, sttProvider: "google" as const, sttApiKey: "gkey" };
+
+/** 44 バイト WAV ヘッダ + 最小 PCM（16kHz）のテスト用 WAV */
+function makeTinyWav(): ArrayBuffer {
+  const pcm = new Uint8Array([0, 0, 1, 0]);
+  const buf = new ArrayBuffer(44 + pcm.length);
+  const v = new DataView(buf);
+  v.setUint32(24, 16000, true); // sampleRate
+  v.setUint32(40, pcm.length, true); // dataLength
+  new Uint8Array(buf).set(pcm, 44);
+  return buf;
+}
+
+test("google provider posts LINEAR16 base64 PCM to speech:recognize", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (url: any, opts: any) => {
+    calls.push({ url, opts });
+    return { ok: true, json: async () => ({ results: [{ alternatives: [{ transcript: "テスト" }] }] }) } as any;
+  }) as any;
+
+  const stt = createSttProvider(googleSettings, fakeFetch);
+  assert.equal(stt.id, "google");
+  assert.equal(stt.maxChunkSec, 55); // 同期 API は約 60 秒制限
+  const text = await stt.transcribe(makeTinyWav(), "ja");
+  assert.equal(text, "テスト");
+
+  assert.match(calls[0].url, /speech\.googleapis\.com\/v1\/speech:recognize\?key=gkey/);
+  const body = JSON.parse(calls[0].opts.body);
+  assert.equal(body.config.encoding, "LINEAR16");
+  assert.equal(body.config.sampleRateHertz, 16000);
+  assert.equal(body.config.languageCode, "ja-JP");
+  // WAV ヘッダ（44 バイト）を除去した PCM のみ base64 化されること
+  assert.equal(body.audio.content, btoa(String.fromCharCode(0, 0, 1, 0)));
+});
+
+test("google provider maps lang codes (zh → cmn-Hans-CN, auto → ja-JP)", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (_url: any, opts: any) => {
+    calls.push({ opts });
+    return { ok: true, json: async () => ({ results: [] }) } as any;
+  }) as any;
+  const stt = createSttProvider(googleSettings, fakeFetch);
+  await stt.transcribe(makeTinyWav(), "zh");
+  assert.equal(JSON.parse(calls[0].opts.body).config.languageCode, "cmn-Hans-CN");
+  await stt.transcribe(makeTinyWav(), "auto");
+  assert.equal(JSON.parse(calls[1].opts.body).config.languageCode, "ja-JP");
+});
+
+test("google provider throws on http error", async () => {
+  const fakeFetch = (async () => ({ ok: false, status: 403, text: async () => "forbidden" })) as any;
+  const stt = createSttProvider(googleSettings, fakeFetch);
+  await assert.rejects(() => stt.transcribe(makeTinyWav(), "ja"), /403/);
 });
 
 // Chromium（Obsidian レンダラー）の window.fetch は this !== window で
@@ -91,7 +148,7 @@ test("default stt fetchImpl works with binding-sensitive fetch (chromium)", asyn
 
 test("default llm fetchImpl works with binding-sensitive fetch (chromium)", async () => {
   await withBindingSensitiveFetch(async () => {
-    const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmApiKey: "k" });
+    const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "cloud", llmApiKey: "k" });
     await llm.complete("s", "u"); // Illegal invocation にならなければ OK
   });
 });
@@ -102,10 +159,17 @@ test("cloud llm posts chat completion", async () => {
     calls.push({ url, opts });
     return { ok: true, json: async () => ({ choices: [{ message: { content: "## 摘要\n讨论 POC" } }] }) } as any;
   }) as any;
-  const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmApiKey: "k" }, fakeFetch);
+  const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "cloud", llmApiKey: "k" }, fakeFetch);
   const out = await llm.complete("sys", "user");
   assert.match(out, /讨论 POC/);
   assert.match(calls[0].url, /chat\/completions/);
+});
+
+test("claudian llm provider throws (handled by Claudian 連携フロー instead)", () => {
+  assert.throws(
+    () => createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "claudian" }),
+    /claudian/i
+  );
 });
 
 test("ollama llm uses localhost base", async () => {

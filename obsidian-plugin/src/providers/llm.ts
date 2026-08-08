@@ -39,6 +39,11 @@ export function createLlmProvider(
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): LlmProvider {
+  if (settings.llmProvider === "claudian") {
+    // Claudian 連携は complete() ではなく importAudio フロー側で
+    // 「要約プロンプトを Claudian 入力欄に挿入」する方式のため、ここでは生成できない
+    throw new Error("claudian プロバイダーは createLlmProvider ではなく Claudian 連携フローで処理されます");
+  }
   if (settings.llmProvider === "ollama") {
     return new OpenAiCompatibleLlm("ollama", settings.llmBaseUrl, settings.llmModel, "", fetchImpl);
   }

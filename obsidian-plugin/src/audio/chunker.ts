@@ -8,6 +8,11 @@ function readHeader(view: DataView) {
   };
 }
 
+/** WAV ヘッダ情報を読み取る（Google STT 等で PCM 抽出に使用） */
+export function readWavHeader(wav: ArrayBuffer) {
+  return readHeader(new DataView(wav));
+}
+
 function buildWav(headerBytes: Uint8Array, pcm: Uint8Array): ArrayBuffer {
   const out = new Uint8Array(HEADER_LEN + pcm.length);
   out.set(headerBytes.slice(0, HEADER_LEN), 0);

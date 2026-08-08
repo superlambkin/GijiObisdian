@@ -1,8 +1,10 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
-import { transcribeAudioToMinutes } from "../commands/importAudio";
+import { transcribeAudio, transcribeAudioToMinutes } from "../commands/importAudio";
+import { buildClaudianMinutesPrompt, loadMinutesTemplate } from "../notes/minutesTemplate";
+import { appendToClaudianInput } from "./claudianApi";
 
-export async function importAudioFlow(app: App, settings: GijiSettings) {
+export async function importAudioFlow(app: App, settings: GijiSettings, manifestDir: string) {
   const input = document.createElement("input");
   input.type = "file";
   input.accept = "audio/*,.wav,.mp3,.m4a,.flac,.ogg";
@@ -10,12 +12,35 @@ export async function importAudioFlow(app: App, settings: GijiSettings) {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      new Notice(`转写 ${file.name}…`);
+      new Notice(`文字起こし中: ${file.name}…`);
       const buf = await file.arrayBuffer();
-      const md = await transcribeAudioToMinutes(buf, settings);
-      const name = `📋 ${new Date().toISOString().slice(0, 10)} 会议纪要.md`;
+
+      // Claudian（デフォルト）: 要約プロンプトを Claudian 入力欄に挿入し、
+      // Claudian のエージェントがテンプレートに従って議事録 MD を作成・保存する
+      if (settings.llmProvider === "claudian") {
+        const transcript = await transcribeAudio(buf, settings);
+        const template = await loadMinutesTemplate(app, settings, manifestDir);
+        const prompt = buildClaudianMinutesPrompt(
+          template,
+          transcript,
+          settings.outputDir,
+          new Date().toISOString().slice(0, 10)
+        );
+        const ok = await appendToClaudianInput(app, prompt);
+        new Notice(
+          ok
+            ? "✅ 要約プロンプトを Claudian の入力欄に挿入しました（送信すると議事録を生成します）"
+            : "❌ Claudian の入力欄が見つかりません"
+        );
+        return;
+      }
+
+      // クラウド / Ollama: テンプレートを適用して LLM で議事録 MD を生成
+      const template = await loadMinutesTemplate(app, settings, manifestDir);
+      const md = await transcribeAudioToMinutes(buf, settings, fetch.bind(globalThis), template);
+      const name = `議事録_${new Date().toISOString().slice(0, 10)}.md`;
       await app.vault.create(`${settings.outputDir}/${name}`, md);
-      new Notice("✅ 纪要已生成");
+      new Notice("✅ 議事録を生成しました");
     } catch (err: any) {
       new Notice(`${err?.message ?? err}`);
     }

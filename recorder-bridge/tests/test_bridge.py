@@ -43,3 +43,23 @@ def test_record_start_and_stop_produces_wav(tmp_path, monkeypatch):
 def test_stop_unknown_session_errors():
     r = client.post("/record/stop", json={"sessionId": "nope"})
     assert r.status_code == 404
+
+
+def test_record_start_with_custom_outdir_and_filename(tmp_path, monkeypatch):
+    """プラグインの「録音ファイルの保存場所」「録音ファイル名」設定が WAV 保存先に反映される"""
+    monkeypatch.setattr("config.TMP_DIR", str(tmp_path / "default_tmp"))
+    out_dir = tmp_path / "custom_rec"
+    r = client.post(
+        "/record/start",
+        json={"format": "wav", "outDir": str(out_dir), "fileName": "録音_2026-08-09_06-30-15"},
+    )
+    assert r.status_code == 200
+    sid = r.json()["sessionId"]
+    r = client.post("/record/stop", json={"sessionId": sid})
+    assert r.status_code == 200
+    body = r.json()
+    assert str(out_dir) in body["wavPath"]
+    assert body["wavPath"].endswith("録音_2026-08-09_06-30-15.wav")
+    with wave.open(body["wavPath"], "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getframerate() == 16000
