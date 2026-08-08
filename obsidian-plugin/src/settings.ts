@@ -67,6 +67,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { runSttTest } from "./test/sttTest";
+import { runLlmTest } from "./test/llmTest";
 
 export class GijiSettingsTab extends PluginSettingTab {
   constructor(app: App, private plugin: any) {
@@ -310,6 +311,22 @@ export class GijiSettingsTab extends PluginSettingTab {
         t.setValue(s.llmApiKey).onChange(async (v: string) => {
           s.llmApiKey = v;
           await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("🧪 接続テスト")
+      .setDesc("cloud/ollama は最小プロンプトで疎通確認、claudian はプラグイン連携を検出（テキスト挿入なし）")
+      .addButton((btn) =>
+        btn.setButtonText("テスト開始").onClick(async () => {
+          btn.setDisabled(true).setButtonText("テスト中…");
+          try {
+            const res = await runLlmTest(this.plugin.settings, this.app);
+            if (res.ok) new Notice(`✅ 接続成功: ${res.text}`);
+            else new Notice(`❌ テスト失敗: ${res.error}`);
+          } finally {
+            btn.setDisabled(false).setButtonText("テスト開始");
+          }
         })
       );
 
