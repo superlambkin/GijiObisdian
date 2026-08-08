@@ -31,6 +31,41 @@ test("groq provider throws on http error", async () => {
   await assert.rejects(() => stt.transcribe(new ArrayBuffer(4), "zh"), /401/);
 });
 
+const openaiSettings = { ...DEFAULT_SETTINGS, sttProvider: "openai" as const, sttApiKey: "key" };
+
+test("openai provider transcribes via openai whisper endpoint", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (url: any, opts: any) => {
+    calls.push({ url, opts });
+    return {
+      ok: true,
+      json: async () => ({ text: "こんにちは" }),
+    } as any;
+  }) as any;
+
+  const stt = createSttProvider(openaiSettings, fakeFetch);
+  assert.equal(stt.id, "openai");
+  const text = await stt.transcribe(new ArrayBuffer(8), "ja");
+  assert.equal(text, "こんにちは");
+  assert.equal(
+    calls[0].url,
+    "https://api.openai.com/v1/audio/transcriptions"
+  );
+});
+
+test("openai provider throws on http error", async () => {
+  const fakeFetch = (async () => ({ ok: false, status: 401, text: async () => "bad key" })) as any;
+  const stt = createSttProvider(openaiSettings, fakeFetch);
+  await assert.rejects(() => stt.transcribe(new ArrayBuffer(4), "zh"), /401/);
+});
+
+test("unsupported stt provider throws instead of silent fallback", () => {
+  assert.throws(
+    () => createSttProvider({ ...DEFAULT_SETTINGS, sttProvider: "doubao" as const, sttApiKey: "k" }),
+    /未対応|unsupported/i
+  );
+});
+
 test("cloud llm posts chat completion", async () => {
   const calls: any[] = [];
   const fakeFetch = (async (url: any, opts: any) => {
