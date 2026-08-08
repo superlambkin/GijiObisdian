@@ -13,8 +13,8 @@ export async function runSttTest(
   fetchImpl: typeof fetch = fetch
 ): Promise<SttTestResult> {
   if (!settings.sttApiKey) return { ok: false, error: "请先填写 STT API Key" };
-  const provider = createSttProvider(settings, fetchImpl);
   try {
+    const provider = createSttProvider(settings, fetchImpl);
     const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
     if (!text.trim()) return { ok: false, error: "请求成功但未识别出文本" };
     return { ok: true, text };
