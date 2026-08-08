@@ -3,6 +3,7 @@ import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
+import { appendToClaudianInput } from "./claudianApi";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
@@ -178,13 +179,18 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
           }
         }
 
-        const ta = findTextarea(btn);
-        if (!ta) {
-          new Notice("未找到 Claudian 输入框");
-          console.warn("[giji] no Claudian textarea found for toolbar", btn.closest(TOOLBAR_SELECTOR));
-          return;
+        // 内部 API 優先（realclaudian 自身が入力欄を解決するため頑健）。
+        // 失敗時のみ DOM セレクタ方式へフォールバック。
+        const inserted = await appendToClaudianInput(plugin.app, text);
+        if (!inserted) {
+          const ta = findTextarea(btn);
+          if (!ta) {
+            new Notice("未找到 Claudian 输入框");
+            console.warn("[giji] no Claudian textarea found for toolbar", btn.closest(TOOLBAR_SELECTOR));
+            return;
+          }
+          insertTextIntoElement(ta, text);
         }
-        insertTextIntoElement(ta, text);
       } else {
         try {
           const started = await state.recorder.start(settings);
