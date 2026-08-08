@@ -6,15 +6,8 @@ const pad = (n: number) => n.toString().padStart(2, "0");
 /** MD生成ルールの適用バージョン（生成物に記録する） */
 const APPLIED_RULES_VERSION = "2.11.0";
 
-/**
- * テンプレートから転写ファイル名を生成する。
- * 既定: `議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分`
- * 例: `議事録_2026年08月04日06時30分`（衝突は呼び出し側で -2 接尾）
- */
-export function buildTranscriptFilename(
-  now: Date,
-  template: string = DEFAULT_SETTINGS.fileNameTemplate
-): string {
+/** テンプレートの占位符を日時値で置き換える（サニタイズなしの内部関数） */
+function renderTemplate(now: Date, template: string): string {
   const values: Record<string, string> = {
     year: String(now.getFullYear()),
     month: pad(now.getMonth() + 1),
@@ -25,12 +18,38 @@ export function buildTranscriptFilename(
     date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
     time: `${pad(now.getHours())}-${pad(now.getMinutes())}`,
   };
-  const rendered = template.replace(
+  return template.replace(
     /\{\{(year|month|day|hour|minute|second|date|time)\}\}/g,
     (_full, key: string) => values[key] ?? _full
   );
+}
+
+/**
+ * テンプレートから転写ファイル名を生成する。
+ * 既定: `議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分`
+ * 例: `議事録_2026年08月04日06時30分`（衝突は呼び出し側で -2 接尾）
+ */
+export function buildTranscriptFilename(
+  now: Date,
+  template: string = DEFAULT_SETTINGS.fileNameTemplate
+): string {
   // Windows/Obsidian で使えないファイル名文字を除去
-  return rendered.replace(/[\\/:*?"<>|]/g, "-");
+  return renderTemplate(now, template).replace(/[\\/:*?"<>|]/g, "-");
+}
+
+/**
+ * 追加録音判定用の「時間プレフィックス」を生成する。
+ * テンプレートを最初の {{minute}}/{{second}} 占位符の手前で切り、
+ * そこまでを描画する（例: `議事録_2026年08月09日05時`）。
+ * テンプレートに分・秒占位符が無い場合はファイル名全体を返す。
+ */
+export function buildHourPrefix(
+  now: Date,
+  template: string = DEFAULT_SETTINGS.fileNameTemplate
+): string {
+  const minuteIdx = template.search(/\{\{(minute|second)\}\}/);
+  const hourTemplate = minuteIdx === -1 ? template : template.slice(0, minuteIdx);
+  return renderTemplate(now, hourTemplate);
 }
 
 /** 秒数を「X 分 Y 秒」表記に整形する */
@@ -173,10 +192,26 @@ export function buildAppendedNote(
 }
 
 /**
+ * 同じ時間（時）に開始した録音の議事録を探す。
+ * 時間プレフィックスに前方一致する .md のうち ==最も早いもの==（名前順）を返す。
+ * 例: プレフィックス `議事録_2026年08月09日05時` に
+ *     `…05時21分.md` と `…05時41分.md` がある → `…05時21分.md`
+ */
+async function findSameHourFile(vault: any, dir: string, prefix: string): Promise<string | null> {
+  const listed = await vault.adapter.list(dir);
+  const base = (p: string) => p.split("/").pop() ?? p;
+  const matches = (listed.files as string[])
+    .filter((f) => f.endsWith(".md") && base(f).startsWith(prefix))
+    .sort();
+  return matches.length ? matches[0] : null;
+}
+
+/**
  * 把转写文本保存为 MD 文档到 `settings.transcriptSaveDir`（Vault 内路径）。
- * 同名（同时间精度）议事录已存在时：
- *   - 追加录音 ON → 追记到既有文件（appended: true）
- *   - 追加录音 OFF → 追加 -2, -3 … 后缀新建文件（appended: false）
+ * 追加录音 ON 时，若==同じ時間（時）==に開始した議事録が存在すれば追記：
+ *   - 例: 05時21分.md が存在し 05:41 に録音 → 05時21分.md に追記（appended: true）
+ *   - 別の時間の議事録しか無ければ新規作成（appended: false）
+ * 追加录音 OFF 时は従来通り同名衝突で -2, -3 … 后缀。
  */
 export async function saveTranscriptToFile(
   app: App,
@@ -198,12 +233,16 @@ export async function saveTranscriptToFile(
   const filename = buildTranscriptFilename(now, template);
   const basePath = `${dir}/${filename}.md`;
 
-  // 追加録音：同名（＝同じ時間に開始した録音）議事録が存在すれば追記
-  if (settings.appendRecordEnabled && (await vault.adapter.exists(basePath))) {
-    const prev: string = await vault.adapter.read(basePath);
-    const next = buildAppendedNote(prev, text, durationSec, now);
-    await vault.adapter.write(basePath, next);
-    return { path: basePath, appended: true };
+  // 追加録音：同じ時間（時）に開始した議事録が存在すれば追記
+  if (settings.appendRecordEnabled) {
+    const hourPrefix = buildHourPrefix(now, template);
+    const target = await findSameHourFile(vault, dir, hourPrefix);
+    if (target) {
+      const prev: string = await vault.adapter.read(target);
+      const next = buildAppendedNote(prev, text, durationSec, now);
+      await vault.adapter.write(target, next);
+      return { path: target, appended: true };
+    }
   }
 
   // 新規保存（衝突時は -2, -3 … を追加）

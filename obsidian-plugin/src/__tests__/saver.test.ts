@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS } from "../settings";
 import {
   buildAppendedNote,
+  buildHourPrefix,
   buildTranscriptFilename,
   formatDuration,
   renderTranscriptNote,
@@ -29,6 +30,19 @@ test("buildTranscriptFilename renders custom template placeholders", () => {
 test("buildTranscriptFilename strips illegal filename chars", () => {
   const name = buildTranscriptFilename(FIXED, 'a/b\\c:d*e?f"g<h>i|j');
   assert.ok(!/[\\/:*?"<>|]/.test(name), `illegal chars remain: ${name}`);
+});
+
+/* ---------------- 追加録音の判定（「時」粒度） ---------------- */
+
+const AT_0541 = new Date(2026, 7, 9, 5, 41, 7); // 2026-08-09 05:41:07
+
+test("buildHourPrefix renders up to hour for default template", () => {
+  assert.equal(buildHourPrefix(AT_0541), "議事録_2026年08月09日05時");
+});
+
+test("buildHourPrefix returns full name when template has no minute/second", () => {
+  assert.equal(buildHourPrefix(AT_0541, "議事録_{{date}}"), "議事録_2026-08-09");
+  assert.equal(buildHourPrefix(AT_0541, "議事録_{{date}}_{{hour}}時"), "議事録_2026-08-09_05時");
 });
 
 test("formatDuration formats seconds to 分/秒", () => {
@@ -85,6 +99,7 @@ test("saveTranscriptToFile creates dir + writes file with 和式 name", async ()
   ]);
   const adapter = {
     exists: async (p: string) => files.get(p) ?? false,
+    list: async () => ({ files: [], folders: [] }),
   };
   const vault = {
     adapter,
@@ -136,6 +151,7 @@ test("saveTranscriptToFile falls back to Clippings when dir empty", async () => 
   const vault = {
     adapter: {
       exists: async (p: string) => files.get(p) ?? false,
+      list: async () => ({ files: [], folders: [] }),
     },
     createFolder: async (dir: string) => files.set(dir, true),
     create: async (path: string, _content: string) => {
@@ -201,6 +217,7 @@ test("saveTranscriptToFile appends when enabled and same-minute file exists", as
     adapter: {
       exists: async (p: string) => existing.has(p),
       read: async (p: string) => existing.get(p) ?? "",
+      list: async () => ({ files: ["Clippings/議事録_2026年08月04日06時30分.md"], folders: [] }),
       write: async (p: string, content: string) => {
         written.push({ path: p, content });
         existing.set(p, content);
@@ -218,4 +235,74 @@ test("saveTranscriptToFile appends when enabled and same-minute file exists", as
   assert.match(written[0].content, /最初の転写。/);
   assert.match(written[0].content, /追加の転写。/);
   assert.match(written[0].content, /## 🕐 追加録音/);
+});
+
+/* ---------------- 「時」粒度の追記判定（主人の要件 2026-08-09） ---------------- */
+
+function makeHourMockVault(existingFiles: Map<string, string>, written: { path: string; content: string }[], created: string[]) {
+  return {
+    adapter: {
+      exists: async (p: string) => existingFiles.has(p),
+      read: async (p: string) => existingFiles.get(p) ?? "",
+      list: async () => ({ files: [...existingFiles.keys()].filter((k) => k.endsWith(".md")), folders: [] }),
+      write: async (p: string, content: string) => {
+        written.push({ path: p, content });
+        existingFiles.set(p, content);
+      },
+    },
+    createFolder: async () => {},
+    create: async (path: string, content: string) => {
+      created.push(path);
+      existingFiles.set(path, content);
+    },
+  };
+}
+
+test("appends into same-hour file even when minutes differ (05:41 → 05時21分.md)", async () => {
+  const prev = renderTranscriptNote("議事録_2026年08月09日05時21分", new Date(2026, 7, 9, 5, 21), "五時台の最初の録音。", 60, "Clippings/議事録_2026年08月09日05時21分.md");
+  const existing = new Map<string, string>([
+    ["Clippings/議事録_2026年08月09日05時21分.md", prev],
+    ["Clippings", ""],
+  ]);
+  const written: { path: string; content: string }[] = [];
+  const created: string[] = [];
+  const app = { vault: makeHourMockVault(existing, written, created) } as any;
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings", appendRecordEnabled: true };
+
+  const saved = await saveTranscriptToFile(app, settings, "四十一分の追加録音。", 45, AT_0541);
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月09日05時21分.md", appended: true });
+  assert.equal(created.length, 0);
+  assert.match(written[0].content, /五時台の最初の録音。/);
+  assert.match(written[0].content, /四十一分の追加録音。/);
+});
+
+test("creates new file when existing file is a different hour (04時 vs 05時)", async () => {
+  const existing = new Map<string, string>([
+    ["Clippings/議事録_2026年08月09日04時41分.md", "old"],
+    ["Clippings", ""],
+  ]);
+  const written: { path: string; content: string }[] = [];
+  const created: string[] = [];
+  const app = { vault: makeHourMockVault(existing, written, created) } as any;
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings", appendRecordEnabled: true };
+
+  const saved = await saveTranscriptToFile(app, settings, "別時間の録音。", 30, AT_0541);
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月09日05時41分.md", appended: false });
+  assert.equal(created.length, 1);
+  assert.equal(written.length, 0);
+});
+
+test("appends into the earliest file when multiple same-hour files exist", async () => {
+  const existing = new Map<string, string>([
+    ["Clippings/議事録_2026年08月09日05時41分.md", "later"],
+    ["Clippings/議事録_2026年08月09日05時21分.md", "earlier"],
+    ["Clippings", ""],
+  ]);
+  const written: { path: string; content: string }[] = [];
+  const created: string[] = [];
+  const app = { vault: makeHourMockVault(existing, written, created) } as any;
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "Clippings", appendRecordEnabled: true };
+
+  const saved = await saveTranscriptToFile(app, settings, "三番目の録音。", 30, new Date(2026, 7, 9, 5, 55));
+  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月09日05時21分.md", appended: true });
 });

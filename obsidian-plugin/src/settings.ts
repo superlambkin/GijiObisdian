@@ -175,7 +175,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("追加录音")
-      .setDesc("开启后，若同名（同时间精度）议事录已存在，则将新转写内容追加到该文件而非新建")
+      .setDesc("开启后，同一小时（年月日時相同）内开始的录音将追加到该小时最早的议事录文件中")
       .addToggle((t) =>
         t
           .setValue(this.plugin.settings.appendRecordEnabled)
