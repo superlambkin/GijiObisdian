@@ -316,12 +316,12 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("🧪 接続テスト")
-      .setDesc("cloud/ollama は最小プロンプトで疎通確認、claudian はプラグイン連携を検出（テキスト挿入なし）")
+      .setDesc("cloud/ollama は最小プロンプトで疎通確認、claudian はプラグイン連携を検出（テキスト挿入なし・claudian 選択時はビューが開きます）")
       .addButton((btn) =>
         btn.setButtonText("テスト開始").onClick(async () => {
           btn.setDisabled(true).setButtonText("テスト中…");
           try {
-            const res = await runLlmTest(this.plugin.settings, this.app);
+            const res = await runLlmTest(s, this.app);
             if (res.ok) new Notice(`✅ 接続成功: ${res.text}`);
             else new Notice(`❌ テスト失敗: ${res.error}`);
           } finally {

@@ -39,6 +39,25 @@ test("cloud: chat completion success returns trimmed text", async () => {
   assert.equal(res.text, "OK");
 });
 
+test("cloud: default fetch is bound (fetch.bind(globalThis) regression guard)", async () => {
+  const originalFetch = globalThis.fetch;
+  const mockFetch = (async function (this: unknown) {
+    assert.equal(this, globalThis);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "OK" } }] }),
+    };
+  }) as any;
+  globalThis.fetch = mockFetch;
+  try {
+    const res = await runLlmTest(cloudBase, undefined);
+    assert.equal(res.ok, true);
+    assert.equal(res.text, "OK");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("cloud: empty completion returns hint", async () => {
   const fetchImpl = (async () => ({
     ok: true,
