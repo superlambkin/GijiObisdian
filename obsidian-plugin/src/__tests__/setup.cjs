@@ -33,6 +33,9 @@ Module._load = function (request, parent, isMain) {
         }
       },
       App: class {},
+      Notice: class {
+        constructor(_message) {}
+      },
     };
   }
   return originalLoad(request, parent, isMain);
