@@ -8,15 +8,33 @@ import {
   buildTemplateSystemPrompt,
 } from "../notes/minutesTemplate";
 import { MINUTES_SYSTEM_PROMPT } from "../notes/generator";
-import { fillMinutesMetadata, formatStartTime } from "../notes/minutesMetadata";
+import {
+  fillMinutesMetadata,
+  formatStartTime,
+  enforceFrontmatterDates,
+  getFrontmatterField,
+  setFrontmatterField,
+} from "../notes/minutesMetadata";
 import { appendToClaudianInput } from "../ui/claudianApi";
 import { buildTranscriptFilename } from "../notes/saver";
+import { SummarizeStage } from "../ui/recordingTimer";
+
+export interface SummarizeProgress {
+  stage: SummarizeStage;
+  receivedChars?: number;
+}
 
 export interface AutoSummarizeOptions {
   fetchImpl?: typeof fetch;
   startTime?: Date;
   durationSec?: number;
   mp3Links?: string;
+  /** 手動実行: autoSummarizeEnabled が OFF でも実行する */
+  force?: boolean;
+  /** 指定時は連番を作らずこのパスへ保存する（既存なら上書き） */
+  overwritePath?: string;
+  /** 進捗コールバック（接続中 → 生成中 → 保存中） */
+  onProgress?: (p: SummarizeProgress) => void;
 }
 
 export interface AutoSummarizeResult {
@@ -57,7 +75,7 @@ export async function runAutoSummarize(
       `[${new Date().toISOString()}] stage=summarize dur_ms=${dur} status=${status} provider=${provider} model=${model} baseUrl=${baseUrl} in_chars=${inChars} ttfb_ms=${fmt(stats.ttfbMs)} in_tokens=${fmt(stats.inputTokens)} out_tokens=${fmt(stats.outputTokens)} retry_count=${stats.retries} ${extra}`
     );
   };
-  if (!settings.autoSummarizeEnabled) {
+  if (!settings.autoSummarizeEnabled && !opts.force) {
     return { ok: true, skippedReason: "disabled" };
   }
   if (!isLlmConfigured(settings)) {
@@ -96,7 +114,11 @@ export async function runAutoSummarize(
         await emitSummarizeLog("fail", "mode=claudian reason=plugin-not-found");
         return { ok: false, error: "Claudian プラグインが見つかりません（未インストールまたは未有効化）" };
       }
-      new Notice("📋 Claudian に要約プロンプトを送信しました");
+      new Notice(
+        opts.force
+          ? "📋 Claudian に要約プロンプトを送信しました（進捗表示・上書きはありません）"
+          : "📋 Claudian に要約プロンプトを送信しました"
+      );
       await emitSummarizeLog("ok", "mode=claudian");
       return { ok: true };
     }
@@ -104,26 +126,55 @@ export async function runAutoSummarize(
     // cloud / ollama
     const llm = createLlmProvider(settings, fetchImpl);
     const systemPrompt = templateMd ? buildTemplateSystemPrompt(templateMd) : MINUTES_SYSTEM_PROMPT;
-    const md = await llm.complete(systemPrompt, transcript, stats);
+    opts.onProgress?.({ stage: "connecting" });
+    const md = await llm.complete(systemPrompt, transcript, stats, {
+      onFirstChunk: () => opts.onProgress?.({ stage: "generating" }),
+      onChunk: (n) => opts.onProgress?.({ stage: "generating", receivedChars: n }),
+    });
 
-    const now = opts.startTime ?? new Date();
-    const fileName = buildTranscriptFilename(now, settings.fileNameTemplate);
+    const startTime = opts.startTime ?? new Date();
+    const finalMd = fillMinutesMetadata(templateMd ? md.trim() + "\n" : md, {
+      startTime,
+      durationSec: opts.durationSec,
+      mp3Links: opts.mp3Links,
+    });
+    // 日付ハルシネーション対策：created/modified を実値で強制
+    let out = enforceFrontmatterDates(finalMd, startTime, new Date());
+
+    opts.onProgress?.({ stage: "saving" });
+    const totalSec = Math.round((Date.now() - summarizeStartMs) / 1000);
+
+    if (opts.overwritePath) {
+      let overwritten = false;
+      if (await app.vault.adapter.exists(opts.overwritePath)) {
+        const old = await (app.vault.adapter as any).read(opts.overwritePath);
+        const num = getFrontmatterField(old, "議事録番号");
+        if (num) out = setFrontmatterField(out, "議事録番号", num);
+        const oldCreated = getFrontmatterField(old, "created");
+        if (oldCreated) out = setFrontmatterField(out, "created", oldCreated);
+        overwritten = true;
+      }
+      await (app.vault.adapter as any).write(opts.overwritePath, out);
+      new Notice(
+        overwritten
+          ? `✅ 議事録を上書きしました（${totalSec} 秒）`
+          : `✅ 議事録を生成しました（${totalSec} 秒）`
+      );
+      await emitSummarizeLog("ok", `mode=${settings.llmProvider} out_chars=${out.length} overwrite=${overwritten}`);
+      return { ok: true };
+    }
+
+    const fileName = buildTranscriptFilename(startTime, settings.fileNameTemplate);
     const dir = (settings.outputDir || "").trim() || "議事録";
-    const basePath = `${dir}/${fileName}.md`;
-    let path = basePath;
+    let path = `${dir}/${fileName}.md`;
     let counter = 2;
     while (await app.vault.exists(path)) {
       path = `${dir}/${fileName}-${counter}.md`;
       counter++;
     }
-    const finalMd = fillMinutesMetadata(templateMd ? md.trim() + "\n" : md, {
-      startTime: now,
-      durationSec: opts.durationSec,
-      mp3Links: opts.mp3Links,
-    });
-    await app.vault.create(path, finalMd);
-    new Notice("✅ 議事録を生成しました");
-    await emitSummarizeLog("ok", `mode=${settings.llmProvider} out_chars=${(finalMd || "").length}`);
+    await app.vault.create(path, out);
+    new Notice(`✅ 議事録を生成しました（${totalSec} 秒）`);
+    await emitSummarizeLog("ok", `mode=${settings.llmProvider} out_chars=${out.length}`);
     return { ok: true };
   } catch (e) {
     const msg = (e as Error).message;

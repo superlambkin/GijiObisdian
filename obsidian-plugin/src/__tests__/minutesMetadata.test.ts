@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatStartTime, fillMinutesMetadata } from "../notes/minutesMetadata";
+import {
+  formatStartTime,
+  fillMinutesMetadata,
+  setFrontmatterField,
+  getFrontmatterField,
+  enforceFrontmatterDates,
+} from "../notes/minutesMetadata";
 
 const TPL = [
   "| 🔢 議事録番号 |  |",
@@ -46,4 +52,36 @@ test("fillMinutesMetadata leaves rows intact when table missing", () => {
   const noTable = "# 議事録\n本文のみ";
   const out = fillMinutesMetadata(noTable, { startTime: START });
   assert.equal(out, "# 議事録\n本文のみ");
+});
+
+test("setFrontmatterField: 既存行を置換", () => {
+  const md = "---\ntitle: \"x\"\ncreated: 2026-04-26\n---\n\n本文";
+  const out = setFrontmatterField(md, "created", "2026-08-09");
+  assert.match(out, /created: 2026-08-09/);
+  assert.ok(!out.includes("2026-04-26"));
+});
+
+test("setFrontmatterField: 無ければ frontmatter 末尾に追加", () => {
+  const md = "---\ntitle: \"x\"\n---\n\n本文";
+  const out = setFrontmatterField(md, "議事録番号", "20260809-2214");
+  assert.match(out, /議事録番号: 20260809-2214\n---/);
+});
+
+test("setFrontmatterField: frontmatter 自体が無ければ先頭に作成", () => {
+  const out = setFrontmatterField("本文のみ", "modified", "2026-08-09 23:00");
+  assert.ok(out.startsWith("---\nmodified: 2026-08-09 23:00\n---\n"));
+});
+
+test("getFrontmatterField: 値取得・空・未存在", () => {
+  const md = "---\n議事録番号: 20260809-2214\ncreated: \n---\n";
+  assert.equal(getFrontmatterField(md, "議事録番号"), "20260809-2214");
+  assert.equal(getFrontmatterField(md, "created"), undefined);
+  assert.equal(getFrontmatterField(md, "modified"), undefined);
+});
+
+test("enforceFrontmatterDates: created/modified を実値で強制", () => {
+  const md = "---\ncreated: 2026-04-26\nmodified: 2026-04-26 00:00\n---\n\n本文";
+  const out = enforceFrontmatterDates(md, new Date(2026, 7, 9, 22, 14), new Date(2026, 7, 9, 23, 30));
+  assert.match(out, /created: 2026-08-09/);
+  assert.match(out, /modified: 2026-08-09 23:30/);
 });

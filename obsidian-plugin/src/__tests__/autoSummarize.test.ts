@@ -182,3 +182,84 @@ test("cloud: LLM 401 surfaces error", async () => {
   assert.equal(res.ok, false);
   assert.match(res.error ?? "", /401/);
 });
+
+test("force: autoSummarizeEnabled が false でも実行される", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "議事録" } }] }),
+  })) as any;
+  let createdPath: string | null = null;
+  const fakeApp: any = {
+    vault: {
+      adapter: {},
+      async create(path: string) { createdPath = path; },
+      async exists() { return false; },
+    },
+  };
+  const res = await runAutoSummarize(
+    "t",
+    { ...baseSettings, autoSummarizeEnabled: false },
+    fakeApp,
+    "/manifest/dir",
+    { fetchImpl, force: true }
+  );
+  assert.equal(res.ok, true);
+  assert.ok(createdPath);
+});
+
+test("overwritePath: 連番を作らず上書きし 議事録番号・created を引き継ぐ", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "---\n議事録番号: \ncreated: \nmodified: \n---\n新しい議事録" } }] }),
+  })) as any;
+  const OLD = "---\n議事録番号: 20260809-2214\ncreated: 2026-08-09\nmodified: 2026-08-09 22:36\n---\n古い議事録";
+  let writtenPath: string | null = null;
+  let writtenContent: string | null = null;
+  const fakeApp: any = {
+    vault: {
+      adapter: {
+        async exists(p: string) { return p === "議事録/議事録_2026年08月09日22時14分.md"; },
+        async read(_p: string) { return OLD; },
+        async write(p: string, c: string) { writtenPath = p; writtenContent = c; },
+      },
+      async exists() { return true; },
+      async create() { throw new Error("create は呼ばれないはず"); },
+    },
+  };
+  const res = await runAutoSummarize("t", baseSettings, fakeApp, "/manifest/dir", {
+    fetchImpl,
+    startTime: new Date(2026, 7, 9, 22, 14),
+    overwritePath: "議事録/議事録_2026年08月09日22時14分.md",
+  });
+  assert.equal(res.ok, true);
+  assert.equal(writtenPath, "議事録/議事録_2026年08月09日22時14分.md");
+  assert.match(writtenContent as string, /議事録番号: 20260809-2214/);
+  assert.match(writtenContent as string, /created: 2026-08-09/);
+  assert.match(writtenContent as string, /modified: \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  assert.match(writtenContent as string, /新しい議事録/);
+});
+
+test("onProgress: connecting → generating → saving の順で発火", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "議事録" } }] }),
+  })) as any;
+  const stages: string[] = [];
+  const fakeApp: any = {
+    vault: {
+      adapter: {},
+      async create() {},
+      async exists() { return false; },
+    },
+  };
+  await runAutoSummarize("t", baseSettings, fakeApp, "/manifest/dir", {
+    fetchImpl,
+    onProgress: (p) => stages.push(p.stage),
+  });
+  // connecting → generating（複数回あり得る）→ saving の順
+  assert.equal(stages[0], "connecting");
+  assert.equal(stages[stages.length - 1], "saving");
+  assert.ok(stages.includes("generating"));
+  assert.ok(stages.indexOf("connecting") < stages.indexOf("generating"));
+  assert.ok(stages.lastIndexOf("generating") < stages.lastIndexOf("saving"));
+});
