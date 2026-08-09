@@ -103,7 +103,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("🎙️ 録音モード")
-      .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ）")
+      .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ・ブリッジ v0.2.0 以降が必要）")
       .addDropdown((d) =>
         d
           .addOption("mix", "マイク + PC 音声（WASAPI ループバック）")

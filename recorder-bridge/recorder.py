@@ -12,6 +12,13 @@ import soundcard as sc
 import config
 from audio_source import AudioSource, mix_pcm
 
+
+class RecorderStateError(RuntimeError):
+    """録音状態に起因するエラー（already_recording / not_recording）→ HTTP 409。
+
+    デバイス系の RuntimeError（スピーカー無し等）と区別するための専用型。
+    """
+
 # MP3 64 kbps（音声向け圧縮）: 8,000 bytes/sec
 MP3_BYTES_PER_SEC = 8000
 # OpenAI Whisper の 25MB 制限に対し、24MB 以上は分割して文字起こしする
@@ -40,6 +47,7 @@ class Recorder:
         self._out_dir_override: Optional[str] = None
         self._file_name: Optional[str] = None
         self._audio_source: AudioSource = AudioSource.MIC
+        self._capture_errors = {}
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
 
@@ -58,55 +66,78 @@ class Recorder:
     ) -> str:
         with self._lock:
             if self._threads:
-                raise RuntimeError("already_recording")
+                raise RecorderStateError("already_recording")
             source = AudioSource(audio_source)
-            self._sources = []
+
+            # 1) 先に全ソースをプローブする（ここで失敗してもメンバ状態は無傷）
+            probed = []
+            if source in (AudioSource.MIC, AudioSource.MIX):
+                probed.append(
+                    (sc.get_microphone(sc.default_microphone().name, include_loopback=False), "mic")
+                )
+            if source in (AudioSource.PC_LOOPBACK, AudioSource.MIX):
+                speaker = sc.default_speaker()  # スピーカー無し → 例外（呼び出し元で 500）
+                probed.append((sc.get_microphone(speaker.name, include_loopback=True), "pc"))
+
+            # 2) 状態を初期化
+            self._sources = probed
             self._threads = []
             self._frames = {"mic": [], "pc": []}
+            self._capture_errors = {}
             self._stop_event.clear()
             self._session_id = str(uuid.uuid4())
             self._out_dir_override = out_dir or None
             self._file_name = file_name or None
             self._audio_source = source
 
-            if source in (AudioSource.MIC, AudioSource.MIX):
-                mic = sc.get_microphone(
-                    sc.default_microphone().name, include_loopback=False
-                )
-                self._sources.append((mic, "mic"))
-            if source in (AudioSource.PC_LOOPBACK, AudioSource.MIX):
-                speaker = sc.default_speaker()
-                loopback = sc.get_microphone(speaker.name, include_loopback=True)
-                self._sources.append((loopback, "pc"))
-
-            for source_obj, name in self._sources:
-                t = threading.Thread(
-                    target=self._record_loop,
-                    args=(source_obj, name),
-                    daemon=True,
-                )
-                t.start()
-                self._threads.append(t)
+            # 3) スレッド起動（途中で失敗したら起動済みスレッドを停止して状態を戻す）
+            try:
+                for source_obj, name in self._sources:
+                    t = threading.Thread(
+                        target=self._record_loop,
+                        args=(source_obj, name),
+                        daemon=True,
+                    )
+                    t.start()
+                    self._threads.append(t)
+            except Exception:
+                self._stop_event.set()
+                for t in self._threads:
+                    t.join(timeout=2.0)
+                self._reset_state()
+                raise
             return self._session_id
+
+    def _reset_state(self) -> None:
+        """録音セッションの状態を初期値に戻す（lock 保持下で呼ぶこと）"""
+        self._threads = []
+        self._sources = []
+        self._session_id = None
+        self._out_dir_override = None
+        self._file_name = None
+        self._audio_source = AudioSource.MIC
+        self._capture_errors = {}
 
     def _record_loop(self, source_obj, name: str) -> None:
         """Blocking recording loop — runs in its own thread.
 
         soundcard returns float32 in [-1, 1]; we convert to int16.
+        `recorder()` コンテキストでストリームを 1 回だけ開き、
+        チャンクごとの開閉による音切れを防ぐ。
         """
-        while not self._stop_event.is_set():
-            try:
-                data = source_obj.record(
-                    numframes=self.CHUNK_SAMPLES,
-                    samplerate=config.SAMPLE_RATE,
-                    channels=config.CHANNELS,
-                )
-                pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
-                with self._lock:
-                    self._frames[name].append(pcm)
-            except Exception as e:  # pragma: no cover — depends on hardware
-                print(f"[recorder] {name} error: {e}")
-                break
+        try:
+            with source_obj.recorder(
+                samplerate=config.SAMPLE_RATE, channels=config.CHANNELS
+            ) as rec:
+                while not self._stop_event.is_set():
+                    data = rec.record(numframes=self.CHUNK_SAMPLES)
+                    pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
+                    with self._lock:
+                        self._frames[name].append(pcm)
+        except Exception as e:  # pragma: no cover — depends on hardware
+            print(f"[recorder] {name} error: {e}")
+            with self._lock:
+                self._capture_errors[name] = str(e)
 
     def _write_wav(self, path: str, audio: np.ndarray) -> None:
         with wave.open(path, "wb") as wf:
@@ -150,48 +181,50 @@ class Recorder:
     def stop(self) -> dict:
         with self._lock:
             if not self._threads:
-                raise RuntimeError("not_recording")
+                raise RecorderStateError("not_recording")
             self._stop_event.set()
             for t in self._threads:
                 t.join(timeout=2.0)
             self._threads = []
             self._sources = []
 
-            out_dir = self._out_dir_override or self._out_dir()
-            os.makedirs(out_dir, exist_ok=True)
-            name = self._file_name or f"giji_{self._session_id}"
-            source = self._audio_source
-
-            mic_frames = self._frames["mic"]
-            pc_frames = self._frames["pc"]
-            audio = mix_pcm(
-                mic_frames if mic_frames else None,
-                pc_frames if pc_frames else None,
-                config.CHANNELS,
-            )
-            duration = (len(audio) / config.SAMPLE_RATE) if len(audio) else 0.0
-
-            warning = None
             try:
-                paths = self._save_mp3_segments(audio, out_dir, name)
-            except Exception:
-                # 明示的フォールバック: MP3 変換に失敗した場合は WAV で保存し warning を返す
-                warning = "mp3_encode_failed"
-                wav_path = os.path.join(out_dir, f"{name}.wav")
-                self._write_wav(wav_path, audio)
-                paths = [wav_path]
+                out_dir = self._out_dir_override or self._out_dir()
+                os.makedirs(out_dir, exist_ok=True)
+                name = self._file_name or f"giji_{self._session_id}"
+                source = self._audio_source
 
-            audio_source_value = source.value
-            self._session_id = None
-            self._out_dir_override = None
-            self._file_name = None
-            self._audio_source = AudioSource.MIC
-            result = {
-                "audioPaths": paths,
-                "wavPath": paths[0],
-                "durationSec": round(float(duration), 3),
-                "audioSource": audio_source_value,
-            }
-            if warning:
-                result["warning"] = warning
-            return result
+                mic_frames = self._frames["mic"]
+                pc_frames = self._frames["pc"]
+                audio = mix_pcm(
+                    mic_frames if mic_frames else None,
+                    pc_frames if pc_frames else None,
+                    config.CHANNELS,
+                )
+                duration = (len(audio) / config.SAMPLE_RATE) if len(audio) else 0.0
+
+                warning = None
+                try:
+                    paths = self._save_mp3_segments(audio, out_dir, name)
+                except Exception:
+                    # 明示的フォールバック: MP3 変換に失敗した場合は WAV で保存し warning を返す
+                    warning = "mp3_encode_failed"
+                    wav_path = os.path.join(out_dir, f"{name}.wav")
+                    self._write_wav(wav_path, audio)
+                    paths = [wav_path]
+
+                result = {
+                    "audioPaths": paths,
+                    "wavPath": paths[0],
+                    "durationSec": round(float(duration), 3),
+                    "audioSource": source.value,
+                }
+                if self._capture_errors:
+                    # 録音中にデバイス切断等があった場合、デバッグ用にエラーを返す
+                    result["captureErrors"] = dict(self._capture_errors)
+                if warning:
+                    result["warning"] = warning
+                return result
+            finally:
+                # I/O 等で例外が出てもセッション状態は必ずリセットする
+                self._reset_state()

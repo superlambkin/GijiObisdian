@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import config
-from recorder import Recorder
+from recorder import Recorder, RecorderStateError
 
 app = FastAPI(title="GijiObsidian Recorder Bridge")
 
@@ -46,7 +46,7 @@ def record_start(req: StartReq):
             file_name=req.fileName,
             audio_source=req.audioSource or "mic",
         )
-    except RuntimeError as e:
+    except RecorderStateError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         # WASAPI ループバック非対応・デバイス無し・不正な audioSource 等
@@ -60,8 +60,11 @@ def record_stop(req: StopReq):
         raise HTTPException(status_code=404, detail="unknown_session")
     try:
         return _recorder.stop()
-    except RuntimeError as e:
+    except RecorderStateError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        # I/O 例外等（recorder 側で状態は必ずリセット済み）
+        raise HTTPException(status_code=500, detail=f"stop_failed: {e}")
 
 
 if __name__ == "__main__":

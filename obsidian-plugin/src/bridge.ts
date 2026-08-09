@@ -1,3 +1,5 @@
+import type { AudioSourceId } from "./settings";
+
 export async function bridgeHealth(baseUrl: string, fetchImpl: typeof fetch = fetch.bind(globalThis)): Promise<boolean> {
   try {
     const res = await fetchImpl(`${baseUrl}/health`);
@@ -13,7 +15,7 @@ export interface BridgeStartOptions {
   /** 録音ファイル名（拡張子 .wav はブリッジ側で付与）。省略時は giji_<sessionId> */
   fileName?: string;
   /** 録音モード: mic（マイクのみ）/ pcLoopback（PC 音声のみ）/ mix（マイク+PC 音声）。省略時はブリッジ既定 "mic" */
-  audioSource?: string;
+  audioSource?: AudioSourceId;
 }
 
 export async function bridgeStart(
