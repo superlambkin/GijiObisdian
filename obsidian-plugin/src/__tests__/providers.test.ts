@@ -310,6 +310,49 @@ test("kimi preset uses OpenAI 互換エンドポイント", async () => {
   assert.match(calls[0].url, /\/v1\/chat\/completions/);
 });
 
+test("kimi-coding preset uses Kimi for Coding 定額プランエンドポイント", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (url: string, init: any) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "OK" } }] }) } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "kimi-coding",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.match(calls[0].url, /api\.kimi\.com\/coding\/v1\/chat\/completions/);
+  assert.equal(calls[0].body.model, "kimi-for-coding");
+});
+
+// Kimi for Coding 等のエンドポイントは空の system メッセージを 400 で拒否する。
+// system が空なら messages に含めないこと（回帰テスト）。
+test("openai-compatible llm omits empty system message", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (_url: string, init: any) => {
+    calls.push(JSON.parse(init.body));
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "OK" } }] }) } as any;
+  }) as any;
+  const llm = createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "cloud", llmApiKey: "k" }, fakeFetch);
+  await llm.complete("", "u");
+  assert.deepEqual(
+    calls[0].messages.map((m: any) => m.role),
+    ["user"]
+  );
+  // 非空 system は従来通り先頭に含まれる
+  await llm.complete("s", "u");
+  assert.deepEqual(
+    calls[1].messages.map((m: any) => m.role),
+    ["system", "user"]
+  );
+});
+
 test("unknown llmProvider throws", () => {
   assert.throws(
     () => createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "nonexistent" as any }),

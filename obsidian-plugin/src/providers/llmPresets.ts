@@ -11,6 +11,7 @@ export type LlmPresetId =
   | "deepseek"
   | "MiniMax"
   | "kimi"
+  | "kimi-coding"
   | "openai"
   | "claude"
   | "gemini"
@@ -85,6 +86,16 @@ export const LLM_PRESETS: Record<LlmPresetId, LlmPresetConfig> = {
     requiresApiKey: true,
     apiKeyHint: "Moonshot AI: https://platform.moonshot.cn",
   },
+  "kimi-coding": {
+    id: "kimi-coding",
+    displayName: "Kimi for Coding（定額制・OpenAI 互換）",
+    baseUrl: "https://api.kimi.com/coding/v1",
+    model: "kimi-for-coding",
+    apiFormat: "openai",
+    defaultMaxTokens: 32000,
+    requiresApiKey: true,
+    apiKeyHint: "Kimi for Coding 定額プラン: https://www.kimi.com/coding（platform.moonshot のキーとは別物）",
+  },
   openai: {
     id: "openai",
     displayName: "OpenAI",
@@ -157,6 +168,7 @@ export const PRESET_DISPLAY_ORDER: LlmPresetId[] = [
   "deepseek",
   "MiniMax",
   "kimi",
+  "kimi-coding",
   "openai",
   "claude",
   "gemini",

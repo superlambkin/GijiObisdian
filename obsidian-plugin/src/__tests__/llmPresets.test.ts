@@ -8,9 +8,9 @@ import {
 } from "../providers/llmPresets";
 import { DEFAULT_SETTINGS } from "../settings";
 
-test("LLM_PRESETS: 必須プリセット（10 個）が全て含まれる", () => {
+test("LLM_PRESETS: 必須プリセット（11 個）が全て含まれる", () => {
   const required: Array<keyof typeof LLM_PRESETS> = [
-    "claudian", "deepseek", "MiniMax", "kimi",
+    "claudian", "deepseek", "MiniMax", "kimi", "kimi-coding",
     "openai", "claude", "gemini", "ollama", "cloud", "custom",
   ];
   for (const id of required) {
@@ -103,7 +103,16 @@ test("applyPreset: 未知の presetId は入力をそのまま返す", () => {
   assert.equal(out, DEFAULT_SETTINGS);
 });
 
+test("getPreset: kimi-coding は Kimi for Coding 定額プランのエンドポイントを持つ", () => {
+  const p = getPreset("kimi-coding");
+  assert.ok(p);
+  assert.equal(p.baseUrl, "https://api.kimi.com/coding/v1");
+  assert.equal(p.model, "kimi-for-coding");
+  assert.equal(p.apiFormat, "openai");
+  assert.equal(p.requiresApiKey, true);
+});
+
 test("PRESET_DISPLAY_ORDER: 最初の要素が claudian", () => {
   assert.equal(PRESET_DISPLAY_ORDER[0], "claudian");
-  assert.equal(PRESET_DISPLAY_ORDER.length, 10);
+  assert.equal(PRESET_DISPLAY_ORDER.length, 11);
 });

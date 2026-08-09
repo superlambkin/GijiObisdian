@@ -208,12 +208,14 @@ class OpenAiCompatibleLlm implements LlmProvider {
   ) {}
 
   async complete(system: string, user: string, stats?: LlmCallStats, progress?: LlmProgress): Promise<string> {
+    // 空の system メッセージを 400 で拒否するエンドポイント（Kimi for Coding 等）があるため、
+    // system が空なら messages に含めない
+    const messages: Array<{ role: string; content: string }> = [];
+    if (system.trim()) messages.push({ role: "system", content: system });
+    messages.push({ role: "user", content: user });
     const body: any = {
       model: this.model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
+      messages,
       stream: true,
     };
     if (this.includeUsage) body.stream_options = { include_usage: true };
