@@ -82,7 +82,7 @@ export class SegmentRecorder {
     if (result.warning === "mp3_encode_failed") {
       new Notice("⚠️ MP3 変換に失敗したため WAV で保存しました（ffmpeg を確認してください）");
     }
-    new Notice("转写中…");
+    new Notice("転写中…");
 
     const paths = result.audioPaths?.length ? result.audioPaths : [result.wavPath!];
     const stt = createSttProvider(settings);
@@ -104,7 +104,7 @@ export class SegmentRecorder {
       return await this.transcribePaths(result, settings);
     }
     if (!this.sessionId) {
-      new Notice("当前没有进行中的录音");
+      new Notice("進行中の録音がありません");
       return null;
     }
     const sessionId = this.sessionId;
