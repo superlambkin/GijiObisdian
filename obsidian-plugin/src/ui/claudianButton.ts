@@ -197,7 +197,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
   btn.textContent = "🎙️";
 
   const state: ButtonState = {
-    recorder: new SegmentRecorder(plugin.app),
+    recorder: new SegmentRecorder(plugin.app, plugin.manifest.dir),
   };
 
   let busy = false;
@@ -227,7 +227,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         }
         btn.textContent = "🎙️";
         btn.classList.remove("giji-recording");
-        state.recorder = new SegmentRecorder(plugin.app);
+        state.recorder = new SegmentRecorder(plugin.app, plugin.manifest.dir);
         if (!text) {
           timer?.stop(); // 転写が空・録音なし時もタイマーを非表示に戻す
           return;

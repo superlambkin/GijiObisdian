@@ -75,7 +75,7 @@ test("recordingMethod=direct なら DirectRecorder に委譲（bridge 非呼出�
     },
     stop: async () => null,
   } as any;
-  const recorder = new SegmentRecorder({} as any, stub);
+  const recorder = new SegmentRecorder({} as any, "", stub);
   const settings = { recordingMethod: "direct", bridgeBaseUrl: "http://bridge.invalid", audioSource: "mic" } as any;
   const ok = await recorder.start(settings);
   assert.equal(ok, true);

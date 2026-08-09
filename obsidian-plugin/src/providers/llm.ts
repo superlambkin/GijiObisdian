@@ -1,8 +1,167 @@
 import { GijiSettings } from "../settings";
 
+/** LLM 呼び出しの計測結果（complete() の stats 引数に書き戻す） */
+export interface LlmCallStats {
+  /** 最初の SSE チャンク到達までの時間 ms（ストリーミング応答時のみ） */
+  ttfbMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** リトライした回数（0 = 初回成功） */
+  retries: number;
+}
+
 export interface LlmProvider {
   id: string;
-  complete(system: string, user: string): Promise<string>;
+  complete(system: string, user: string, stats?: LlmCallStats): Promise<string>;
+}
+
+/** リトライ対象の HTTP エラー（408/409/429/5xx） */
+class RetryableHttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "RetryableHttpError";
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function isRetryableError(e: any): boolean {
+  if (e?.name === "AbortError") return true; // タイムアウトによる中断
+  if (e instanceof RetryableHttpError) return true; // 429/5xx 等
+  if (e instanceof TypeError) return true; // ネットワーク断（fetch failed 等）
+  return false;
+}
+
+/**
+ * 指数バックオフ＋ジッター付きリトライ。
+ * 最終失敗時は投げる Error に retriesAttempted を付与する。
+ */
+export async function withRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  opts: { maxRetries: number; sleep?: (ms: number) => Promise<void> }
+): Promise<{ value: T; retries: number }> {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let lastErr: any;
+  for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    try {
+      return { value: await fn(attempt), retries: attempt };
+    } catch (e: any) {
+      lastErr = e;
+      if (!isRetryableError(e) || attempt >= opts.maxRetries) {
+        e.retriesAttempted = attempt;
+        throw e;
+      }
+      const backoff = Math.min(8000, 1000 * 2 ** attempt) * (0.5 + Math.random() * 0.5);
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
+}
+
+/** 試行ごとのタイムアウト（AbortController） */
+function withTimeout(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  return { signal: ctrl.signal, clear: () => clearTimeout(timer) };
+}
+
+interface ExtractedEvent {
+  text?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+interface CompleteOutcome {
+  text: string;
+  ttfbMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/** SSE ストリームを読み、テキスト差分と usage を集計。ttfbMs は最初のチャンク到達時点。 */
+async function consumeSse(
+  res: Response,
+  startedMs: number,
+  handle: (json: any) => ExtractedEvent
+): Promise<CompleteOutcome> {
+  const reader = (res.body as any).getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let text = "";
+  let ttfbMs: number | undefined;
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+
+  const handleLine = (line: string) => {
+    const t = line.trim();
+    if (!t.startsWith("data:")) return;
+    const payload = t.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const out = handle(JSON.parse(payload));
+      if (out.text) text += out.text;
+      if (out.inputTokens !== undefined) inputTokens = out.inputTokens;
+      if (out.outputTokens !== undefined) outputTokens = out.outputTokens;
+    } catch {
+      /* 分割された JSON 行などは読み捨て */
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (ttfbMs === undefined) ttfbMs = Date.now() - startedMs;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      handleLine(buf.slice(0, idx));
+      buf = buf.slice(idx + 1);
+    }
+  }
+  if (buf.trim()) handleLine(buf); // 末尾の残り行
+  return { text, ttfbMs, inputTokens, outputTokens };
+}
+
+/** 共通の 1 試行：POST → SSE 優先で読み、非 SSE は JSON フォールバック */
+async function postOnce(
+  fetchImpl: typeof fetch,
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  timeoutMs: number,
+  handleSse: (json: any) => ExtractedEvent,
+  handleFull: (data: any) => CompleteOutcome
+): Promise<CompleteOutcome> {
+  const startedMs = Date.now();
+  const { signal, clear } = withTimeout(timeoutMs);
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    } as any);
+    if (!res.ok) {
+      const msg = `LLM ${res.status}: ${await res.text()}`;
+      if (isRetryableStatus(res.status)) throw new RetryableHttpError(res.status, msg);
+      throw new Error(msg);
+    }
+    const contentType = (res.headers as any)?.get?.("content-type") ?? "";
+    if ((res as any).body && String(contentType).includes("text/event-stream")) {
+      return await consumeSse(res as any, startedMs, handleSse);
+    }
+    // 非ストリーミング応答（モック / SSE 非対応プロキシ）フォールバック
+    return handleFull(await res.json());
+  } finally {
+    clear();
+  }
+}
+
+interface CallOptions {
+  timeoutMs: number;
+  maxRetries: number;
 }
 
 class OpenAiCompatibleLlm implements LlmProvider {
@@ -11,28 +170,130 @@ class OpenAiCompatibleLlm implements LlmProvider {
     private baseUrl: string,
     private model: string,
     private apiKey: string,
-    private fetchImpl: typeof fetch
+    private fetchImpl: typeof fetch,
+    private includeUsage: boolean,
+    private callOpts: CallOptions
   ) {}
 
-  async complete(system: string, user: string): Promise<string> {
-    const res = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content ?? "";
+  async complete(system: string, user: string, stats?: LlmCallStats): Promise<string> {
+    const body: any = {
+      model: this.model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      stream: true,
+    };
+    if (this.includeUsage) body.stream_options = { include_usage: true };
+    try {
+      const { value, retries } = await withRetry(
+        () =>
+          postOnce(
+            this.fetchImpl,
+            `${this.baseUrl.replace(/\/$/, "")}/chat/completions`,
+            {
+              "Content-Type": "application/json",
+              ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+            },
+            body,
+            this.callOpts.timeoutMs,
+            (j) => ({
+              text: j?.choices?.[0]?.delta?.content ?? "",
+              inputTokens: j?.usage?.prompt_tokens,
+              outputTokens: j?.usage?.completion_tokens,
+            }),
+            (data) => ({
+              text: data?.choices?.[0]?.message?.content ?? "",
+              inputTokens: data?.usage?.prompt_tokens,
+              outputTokens: data?.usage?.completion_tokens,
+            })
+          ),
+        { maxRetries: this.callOpts.maxRetries }
+      );
+      if (stats) {
+        stats.ttfbMs = value.ttfbMs;
+        stats.inputTokens = value.inputTokens;
+        stats.outputTokens = value.outputTokens;
+        stats.retries = retries;
+      }
+      return value.text;
+    } catch (e: any) {
+      if (stats) stats.retries = e?.retriesAttempted ?? 0;
+      throw e;
+    }
   }
+}
+
+class AnthropicLlm implements LlmProvider {
+  constructor(
+    public id: string,
+    private baseUrl: string,
+    private model: string,
+    private apiKey: string,
+    private apiVersion: string,
+    private maxTokens: number,
+    private fetchImpl: typeof fetch,
+    private callOpts: CallOptions
+  ) {}
+
+  async complete(system: string, user: string, stats?: LlmCallStats): Promise<string> {
+    const body = {
+      model: this.model,
+      max_tokens: this.maxTokens,
+      system,
+      messages: [{ role: "user", content: user }],
+      stream: true,
+    };
+    try {
+      const { value, retries } = await withRetry(
+        () =>
+          postOnce(
+            this.fetchImpl,
+            `${this.baseUrl.replace(/\/$/, "")}/v1/messages`,
+            {
+              "Content-Type": "application/json",
+              "x-api-key": this.apiKey,
+              "anthropic-version": this.apiVersion,
+            },
+            body,
+            this.callOpts.timeoutMs,
+            (j) => ({
+              text: j?.type === "content_block_delta" ? j?.delta?.text ?? "" : "",
+              inputTokens: j?.type === "message_start" ? j?.message?.usage?.input_tokens : undefined,
+              outputTokens: j?.type === "message_delta" ? j?.usage?.output_tokens : undefined,
+            }),
+            (data) => ({
+              text: (Array.isArray(data?.content) ? data.content : [])
+                .map((b: any) => b?.text ?? "")
+                .join(""),
+              inputTokens: data?.usage?.input_tokens,
+              outputTokens: data?.usage?.output_tokens,
+            })
+          ),
+        { maxRetries: this.callOpts.maxRetries }
+      );
+      if (stats) {
+        stats.ttfbMs = value.ttfbMs;
+        stats.inputTokens = value.inputTokens;
+        stats.outputTokens = value.outputTokens;
+        stats.retries = retries;
+      }
+      return value.text;
+    } catch (e: any) {
+      if (stats) stats.retries = e?.retriesAttempted ?? 0;
+      throw e;
+    }
+  }
+}
+
+function positiveInt(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function nonNegativeInt(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 export function createLlmProvider(
@@ -44,8 +305,25 @@ export function createLlmProvider(
     // 「要約プロンプトを Claudian 入力欄に挿入」する方式のため、ここでは生成できない
     throw new Error("claudian プロバイダーは createLlmProvider ではなく Claudian 連携フローで処理されます");
   }
+  const callOpts: CallOptions = {
+    timeoutMs: positiveInt(settings.llmTimeoutMs, 90000),
+    maxRetries: nonNegativeInt(settings.llmMaxRetries, 2),
+  };
   if (settings.llmProvider === "ollama") {
-    return new OpenAiCompatibleLlm("ollama", settings.llmBaseUrl, settings.llmModel, "", fetchImpl);
+    // ローカル Ollama は常に OpenAI 互換・usage 非対応の可能性があるため stream_options を送らない
+    return new OpenAiCompatibleLlm("ollama", settings.llmBaseUrl, settings.llmModel, "", fetchImpl, false, callOpts);
   }
-  return new OpenAiCompatibleLlm("cloud", settings.llmBaseUrl, settings.llmModel, settings.llmApiKey, fetchImpl);
+  if (settings.llmApiFormat === "anthropic") {
+    return new AnthropicLlm(
+      "anthropic",
+      settings.llmBaseUrl,
+      settings.llmModel,
+      settings.llmApiKey,
+      settings.anthropicVersion || "2023-06-01",
+      positiveInt(settings.llmMaxTokens, 32000),
+      fetchImpl,
+      callOpts
+    );
+  }
+  return new OpenAiCompatibleLlm("cloud", settings.llmBaseUrl, settings.llmModel, settings.llmApiKey, fetchImpl, true, callOpts);
 }

@@ -5,6 +5,7 @@ import { mkdirSync } from "fs";
 export type SttLang = "auto" | "zh" | "ja" | "en";
 export type SttProviderId = "openai" | "google" | "groq";
 export type LlmProviderId = "claudian" | "cloud" | "ollama";
+export type LlmApiFormat = "openai" | "anthropic";
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
 export type RecordingMethodId = "bridge" | "direct";
@@ -19,6 +20,15 @@ export interface GijiSettings {
   llmBaseUrl: string;
   llmModel: string;
   llmApiKey: string;
+  llmApiFormat: LlmApiFormat;
+  anthropicVersion: string;
+  llmMaxTokens: number;
+  /** LLM 1 試行あたりのタイムアウト ms（デフォルト 90000） */
+  llmTimeoutMs: number;
+  /** LLM リトライ回数（デフォルト 2。0 で無効） */
+  llmMaxRetries: number;
+  /** 性能調査用デバッグログ（logs/giji-YYYY-MM-DD.log）を出力する */
+  debugLog: boolean;
   autoSummarizeEnabled: boolean;
   outputDir: string;
   keepTranscript: boolean;
@@ -59,6 +69,12 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmModel: "deepseek-chat",
   llmApiKey: "",
+  llmApiFormat: "openai",
+  anthropicVersion: "2023-06-01",
+  llmMaxTokens: 32000,
+  llmTimeoutMs: 90000,
+  llmMaxRetries: 2,
+  debugLog: true,
   autoSummarizeEnabled: true,
   outputDir: "議事録",
   keepTranscript: true,
@@ -375,11 +391,78 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("LLM API 形式")
+      .setDesc("OpenAI 互換（/chat/completions）または Anthropic 互換（/v1/messages）")
+      .addDropdown((d) =>
+        d
+          .addOption("openai", "OpenAI 互換（/chat/completions）")
+          .addOption("anthropic", "Anthropic 互換（/v1/messages）")
+          .setValue(s.llmApiFormat)
+          .onChange(async (v: string) => {
+            s.llmApiFormat = v as LlmApiFormat;
+            await this.save();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Anthropic API バージョン")
+      .setDesc("例: 2023-06-01（Anthropic 形式選択時のみ使用）")
+      .addText((t) =>
+        t.setValue(s.anthropicVersion).onChange(async (v: string) => {
+          s.anthropicVersion = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Max tokens")
+      .setDesc("LLM 出力トークン上限（Anthropic 形式では必須パラメータ）")
+      .addText((t) =>
+        t.setValue(String(s.llmMaxTokens)).onChange(async (v: string) => {
+          const n = parseInt(v, 10);
+          s.llmMaxTokens = Number.isFinite(n) && n > 0 ? n : 32000;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("⏱️ LLM タイムアウト（ms）")
+      .setDesc("1 試行あたりの上限時間。超えると中断してリトライします（デフォルト: 90000）")
+      .addText((t) =>
+        t.setValue(String(s.llmTimeoutMs)).onChange(async (v: string) => {
+          const n = parseInt(v, 10);
+          s.llmTimeoutMs = Number.isFinite(n) && n > 0 ? n : 90000;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("🔁 LLM リトライ回数")
+      .setDesc("タイムアウト・429・5xx 時に指数バックオフで再試行する回数（デフォルト: 2。0 で無効）")
+      .addText((t) =>
+        t.setValue(String(s.llmMaxRetries)).onChange(async (v: string) => {
+          const n = parseInt(v, 10);
+          s.llmMaxRetries = Number.isFinite(n) && n >= 0 ? n : 2;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("📋 要約自動生成")
       .setDesc("ON の場合、転写完了後に自動で議事録を生成します（OFF で従来通り）")
       .addToggle((t) =>
         t.setValue(s.autoSummarizeEnabled).onChange(async (v: boolean) => {
           s.autoSummarizeEnabled = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("📝 デバッグログ出力")
+      .setDesc("ON で giji-obsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
+      .addToggle((t) =>
+        t.setValue(s.debugLog).onChange(async (v: boolean) => {
+          s.debugLog = v;
           await this.save();
         })
       );

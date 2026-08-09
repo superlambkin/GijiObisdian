@@ -8,8 +8,8 @@ import { RecordingTimer } from "../ui/recordingTimer";
 
 let recorder: SegmentRecorder | null = null;
 
-function getRecorder(app: App): SegmentRecorder {
-  if (!recorder) recorder = new SegmentRecorder(app);
+function getRecorder(app: App, manifestDir: string = ""): SegmentRecorder {
+  if (!recorder) recorder = new SegmentRecorder(app, manifestDir);
   return recorder;
 }
 
@@ -24,7 +24,7 @@ export async function startSegment(app: App, settings: GijiSettings, timer?: Rec
 
 export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
   timer?.setTranscribing(); // 録音停止 → 文字起こし中
-  const r = getRecorder(app);
+  const r = getRecorder(app, manifestDir);
   let result: SegmentResult | null;
   try {
     result = await r.stop(settings);

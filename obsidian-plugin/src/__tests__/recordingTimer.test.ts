@@ -101,14 +101,47 @@ test("setTranscribing clears interval and shows 文字起こし中", () => {
   assert.equal(fake.handlerCount(), 0);
 });
 
-test("setSummarizing clears interval and shows 要約生成中", () => {
+test("setSummarizing shows 要約生成中 with elapsed time and ticks", () => {
   const el = makeFakeEl();
   const fake = makeFakeDeps();
   const timer = new RecordingTimer(el, fake.deps);
   timer.start();
   timer.setSummarizing();
-  assert.equal(timer.isRunning(), false);
-  assert.equal(el.getText(), "🤖 要約生成中…");
+  assert.equal(timer.isRunning(), true);
+  assert.equal(el.getText(), "🤖 要約生成中… 00:00");
   assert.equal(el.isVisible(), true);
-  assert.equal(fake.handlerCount(), 0);
+  assert.equal(fake.handlerCount(), 1);
+  fake.setNow(95_000);
+  fake.fire();
+  assert.equal(el.getText(), "🤖 要約生成中… 01:35");
+});
+
+test("summarizing の経過時間は setSummarizing 時点から計測される", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.start();
+  fake.setNow(60_000); // 録音 60 秒経過
+  fake.fire();
+  timer.setSummarizing(); // 要約開始で 00:00 にリセット
+  assert.equal(el.getText(), "🤖 要約生成中… 00:00");
+  fake.setNow(65_000);
+  fake.fire();
+  assert.equal(el.getText(), "🤖 要約生成中… 00:05");
+});
+
+test("要約生成中に start すると録音表示へ切り替わる", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.setSummarizing();
+  fake.setNow(30_000);
+  fake.fire();
+  assert.equal(el.getText(), "🤖 要約生成中… 00:30");
+  timer.start(); // 要約完了を待たずに新規録音開始
+  assert.equal(el.getText(), "🎙️ 00:00");
+  fake.setNow(33_000);
+  fake.fire();
+  assert.equal(el.getText(), "🎙️ 00:03");
+  assert.equal(fake.handlerCount(), 1);
 });

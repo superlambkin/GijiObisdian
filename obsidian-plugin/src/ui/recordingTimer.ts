@@ -11,9 +11,12 @@ export interface RecordingTimerDeps {
   now?: () => number;
 }
 
+type TimerMode = "recording" | "summarizing" | null;
+
 export class RecordingTimer {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private startTime = 0;
+  private mode: TimerMode = null;
   private deps: Required<Pick<RecordingTimerDeps, "setInterval" | "clearInterval" | "now">>;
 
   constructor(private el: HTMLElement, deps: RecordingTimerDeps = {}) {
@@ -29,39 +32,45 @@ export class RecordingTimer {
     return this.intervalId !== null;
   }
 
-  start(): void {
-    if (this.isRunning()) return;
-    this.startTime = this.deps.now();
-    this.el.setText("🎙️ 00:00");
-    this.el.show();
-    this.intervalId = this.deps.setInterval(() => {
-      this.el.setText(`🎙️ ${formatElapsed(this.deps.now() - this.startTime)}`);
-    }, 1000);
-  }
-
-  stop(): void {
+  private clearTimer(): void {
     if (this.intervalId !== null) {
       this.deps.clearInterval(this.intervalId);
       this.intervalId = null;
     }
+  }
+
+  private startTicking(mode: Exclude<TimerMode, null>, label: string): void {
+    this.clearTimer();
+    this.mode = mode;
+    this.startTime = this.deps.now();
+    this.el.setText(`${label} 00:00`);
+    this.el.show();
+    this.intervalId = this.deps.setInterval(() => {
+      this.el.setText(`${label} ${formatElapsed(this.deps.now() - this.startTime)}`);
+    }, 1000);
+  }
+
+  start(): void {
+    if (this.mode === "recording") return; // 録音中の二重開始は無視
+    // 要約生成中に新規録音が始まった場合は録音表示へ切り替える
+    this.startTicking("recording", "🎙️");
+  }
+
+  stop(): void {
+    this.clearTimer();
+    this.mode = null;
     this.el.hide();
   }
 
   setTranscribing(): void {
-    if (this.intervalId !== null) {
-      this.deps.clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
+    this.clearTimer();
+    this.mode = null;
     this.el.setText("📝 文字起こし中…");
     this.el.show();
   }
 
   setSummarizing(): void {
-    if (this.intervalId !== null) {
-      this.deps.clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-    this.el.setText("🤖 要約生成中…");
-    this.el.show();
+    // 要約生成の経過時間を表示（LLM レイテンシ調査の観測点でもある）
+    this.startTicking("summarizing", "🤖 要約生成中…");
   }
 }

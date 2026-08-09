@@ -4,6 +4,7 @@ import { GijiSettings } from "../settings";
 import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
 import { renderTemplate } from "../notes/saver";
+import { writeDebugLog } from "../util/debugLog";
 import { splitForTranscription } from "./chunker";
 import { DirectRecorder } from "./directRecorder";
 
@@ -45,7 +46,7 @@ export class SegmentRecorder {
   private direct: DirectRecorder;
   private startTime?: Date;
 
-  constructor(private app: App, direct: DirectRecorder = new DirectRecorder()) {
+  constructor(private app: App, private manifestDir: string = "", direct: DirectRecorder = new DirectRecorder()) {
     this.direct = direct;
   }
 
@@ -98,16 +99,36 @@ export class SegmentRecorder {
     new Notice("転写中…");
 
     const paths = result.audioPaths?.length ? result.audioPaths : [result.wavPath!];
-    const stt = createSttProvider(settings);
-    const parts: string[] = [];
-    for (const path of paths) {
-      const buf = await this.readAudioFile(path);
-      // プロバイダー制約に応じて分割（24MB 超 / Google 55 秒等）
-      for (const chunk of splitForTranscription(buf, stt)) {
-        parts.push(await stt.transcribe(chunk, settings.sttLang));
+    const sttStartMs = Date.now();
+    let sttChunks = 0;
+    try {
+      const stt = createSttProvider(settings);
+      const parts: string[] = [];
+      for (const path of paths) {
+        const buf = await this.readAudioFile(path);
+        // プロバイダー制約に応じて分割（24MB 超 / Google 55 秒等）
+        for (const chunk of splitForTranscription(buf, stt)) {
+          parts.push(await stt.transcribe(chunk, settings.sttLang));
+          sttChunks++;
+        }
       }
+      const dur = Date.now() - sttStartMs;
+      const audioMs = typeof result.durationSec === "number" ? Math.round(result.durationSec * 1000) : 0;
+      await writeDebugLog(
+        this.app,
+        this.manifestDir,
+        `[${new Date().toISOString()}] stage=stt dur_ms=${dur} status=ok provider=${settings.sttProvider} chunks=${sttChunks} audio_ms=${audioMs}`
+      );
+      return buildSegmentResult(parts.join("\n\n"), result, this.startTime);
+    } catch (e: any) {
+      const dur = Date.now() - sttStartMs;
+      await writeDebugLog(
+        this.app,
+        this.manifestDir,
+        `[${new Date().toISOString()}] stage=stt dur_ms=${dur} status=fail provider=${settings.sttProvider} error="${(e?.message || "").replace(/"/g, "'")}"`
+      );
+      throw e;
     }
-    return buildSegmentResult(parts.join("\n\n"), result, this.startTime);
   }
 
   async stop(settings: GijiSettings): Promise<SegmentResult | null> {
