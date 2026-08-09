@@ -75,7 +75,7 @@ export async function runAutoSummarize(
 
     const now = new Date();
     const fileName = buildTranscriptFilename(now, settings.fileNameTemplate);
-    const dir = (settings.outputDir || "").trim() || "Clippings";
+    const dir = (settings.outputDir || "").trim() || "議事録";
     const basePath = `${dir}/${fileName}.md`;
     let path = basePath;
     let counter = 2;

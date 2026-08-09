@@ -8,8 +8,8 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
   assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
   assert.equal(DEFAULT_SETTINGS.autoSaveTranscript, true);
-  assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "Clippings");
-  assert.equal(DEFAULT_SETTINGS.outputDir, "Clippings");
+  assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "議事録");
+  assert.equal(DEFAULT_SETTINGS.outputDir, "議事録");
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {

@@ -220,7 +220,7 @@ export async function saveTranscriptToFile(
   durationSec?: number,
   now: Date = new Date()
 ): Promise<{ path: string; appended: boolean }> {
-  const dir = (settings.transcriptSaveDir || "").trim().replace(/^\/+|\/+$/g, "") || "Clippings";
+  const dir = (settings.transcriptSaveDir || "").trim().replace(/^\/+|\/+$/g, "") || "議事録";
   const vault = app.vault as any;
 
   // 确保目录存在

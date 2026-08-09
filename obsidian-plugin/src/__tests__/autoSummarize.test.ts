@@ -14,7 +14,7 @@ const baseSettings = {
   llmBaseUrl: "https://api.example.com/v1",
   llmModel: "test-model",
   llmApiKey: "test-key",
-  outputDir: "Clippings",
+  outputDir: "議事録",
 };
 
 test("disabled: returns skippedReason without calling anything", async () => {
@@ -94,7 +94,7 @@ test("cloud: success creates a new note via vault.create", async () => {
   );
   assert.equal(res.ok, true);
   assert.ok(createdPath, "vault.create should be called");
-  assert.ok((createdPath as string).startsWith("Clippings/議事録_"));
+  assert.ok((createdPath as string).startsWith("議事録/議事録_"));
   assert.match((createdContent as string), /議事録/);
   assert.match((createdContent as string), /transcript content/);
 });

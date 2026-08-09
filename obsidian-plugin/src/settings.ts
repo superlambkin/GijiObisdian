@@ -54,7 +54,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmModel: "deepseek-chat",
   llmApiKey: "",
   autoSummarizeEnabled: true,
-  outputDir: "Clippings",
+  outputDir: "議事録",
   keepTranscript: true,
   minutesTemplateSource: "vault",
   minutesTemplateVaultPath: "00_Vault管理/議事録テンプレート.md",
@@ -67,7 +67,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   recordingMethod: "bridge",
   appendRecordEnabled: true,
   autoSaveTranscript: true,
-  transcriptSaveDir: "Clippings",
+  transcriptSaveDir: "議事録",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
   insertToClaudianEnabled: true,
   emailSummaryEnabled: false,
@@ -283,7 +283,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("転写の保存先")
-      .setDesc("転写 MD の Vault 内保存先（デフォルト: Clippings）")
+      .setDesc("転写 MD の Vault 内保存先（デフォルト: 議事録）")
       .addText((t) =>
         t.setValue(s.transcriptSaveDir).onChange(async (v: string) => {
           s.transcriptSaveDir = v;
@@ -428,7 +428,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("議事録の保存先")
-      .setDesc("生成した議事録 MD の Vault 内保存先（デフォルト: Clippings）")
+      .setDesc("生成した議事録 MD の Vault 内保存先（デフォルト: 議事録）")
       .addText((t) =>
         t.setValue(s.outputDir).onChange(async (v: string) => {
           s.outputDir = v;

@@ -145,7 +145,7 @@ test("saveTranscriptToFile dedupes filename collisions when append disabled", as
   assert.equal(created.length, 1);
 });
 
-test("saveTranscriptToFile falls back to Clippings when dir empty", async () => {
+test("saveTranscriptToFile falls back to 議事録 when dir empty", async () => {
   const created: string[] = [];
   const files = new Map<string, boolean>();
   const vault = {
@@ -163,7 +163,7 @@ test("saveTranscriptToFile falls back to Clippings when dir empty", async () => 
   const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "  /  " };
 
   const saved = await saveTranscriptToFile(app, settings, "文本", undefined, FIXED);
-  assert.deepEqual(saved, { path: "Clippings/議事録_2026年08月04日06時30分.md", appended: false });
+  assert.deepEqual(saved, { path: "議事録/議事録_2026年08月04日06時30分.md", appended: false });
 });
 
 /* ---------------- 追加録音（append） ---------------- */
