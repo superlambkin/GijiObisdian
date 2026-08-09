@@ -304,3 +304,41 @@ test("debugLog OFF ならログを書かない", async () => {
   assert.equal(res.ok, true);
   assert.equal(lines.length, 0);
 });
+
+test("complete: SSE で onFirstChunk/onChunk が発火し累積文字数が増える", async () => {
+  const chunks = [
+    'data: {"choices":[{"delta":{"content":"議事"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"録テスト"}}]}\n\n',
+    "data: [DONE]\n\n",
+  ];
+  const fetchImpl = (async () => sseResponse(chunks)) as any;
+  const llm = createLlmProvider(openAiSettings, fetchImpl);
+  const events: Array<string | number> = [];
+  const text = await llm.complete("sys", "user", undefined, {
+    onFirstChunk: () => events.push("first"),
+    onChunk: (n) => events.push(n),
+  });
+  assert.equal(text, "議事録テスト");
+  assert.equal(events[0], "first"); // TTFB が最初
+  const nums = events.filter((e): e is number => typeof e === "number");
+  assert.deepEqual(nums, [...nums].sort((a, b) => a - b)); // 単調増加
+  assert.equal(nums[nums.length - 1], "議事録テスト".length);
+});
+
+test("complete: 非SSE フォールバックでも onFirstChunk/onChunk が1回ずつ発火", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    headers: { get: () => "application/json" },
+    json: async () => ({ choices: [{ message: { content: "全文" } }] }),
+  })) as any;
+  const llm = createLlmProvider(openAiSettings, fetchImpl);
+  let first = 0;
+  const chunks: number[] = [];
+  const text = await llm.complete("sys", "user", undefined, {
+    onFirstChunk: () => first++,
+    onChunk: (n) => chunks.push(n),
+  });
+  assert.equal(text, "全文");
+  assert.equal(first, 1);
+  assert.deepEqual(chunks, [2]);
+});
