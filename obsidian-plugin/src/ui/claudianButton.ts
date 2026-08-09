@@ -4,11 +4,16 @@ import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
 import { appendToClaudianInput } from "./claudianApi";
+import { RecordingTimer } from "./recordingTimer";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
 const TEXTAREA_SELECTOR = ".claudian-textarea";
 const INPUT_CONTAINER_SELECTOR = ".claudian-input-container";
+
+export function shouldShowBridgeButton(recordingMethod: string): boolean {
+  return recordingMethod === "bridge";
+}
 
 interface ButtonState {
   recorder: SegmentRecorder;
@@ -140,7 +145,7 @@ function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonEle
   return btn;
 }
 
-function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
+function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTimer): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.classList.add("giji-record-btn", "claudian-action-btn");
   btn.setAttribute("aria-label", "录音");
@@ -159,6 +164,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
     btn.disabled = true;
     try {
       if (state.recorder.isRecording()) {
+        timer?.stop(); // ← 録音停止はこの時点
         let text: string | null = null;
         let durationSec: number | undefined;
         try {
@@ -205,6 +211,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
           if (started) {
             btn.textContent = "■";
             btn.classList.add("giji-recording");
+            timer?.start(); // ← ここでタイマー表示
           }
         } catch {
           // Notice already shown by SegmentRecorder.
@@ -219,12 +226,16 @@ function makeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
   return btn;
 }
 
-function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElement) {
+function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElement, timer?: RecordingTimer) {
   const hasBridge = toolbar.querySelector(".giji-bridge-btn");
   const hasRecord = toolbar.querySelector(".giji-record-btn");
-  if (hasBridge && hasRecord) return;
+  const showBridge = shouldShowBridgeButton(settings.recordingMethod);
 
-  if (!hasBridge) {
+  if (!showBridge) {
+    toolbar.querySelectorAll(".giji-bridge-btn").forEach((el) => el.remove());
+  }
+
+  if (showBridge && !hasBridge) {
     const bridgeBtn = makeBridgeButton(plugin, settings);
     if (hasRecord) {
       toolbar.insertBefore(bridgeBtn, hasRecord);
@@ -234,21 +245,24 @@ function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElem
   }
 
   if (!hasRecord) {
-    const recordBtn = makeButton(plugin, settings);
+    const recordBtn = makeButton(plugin, settings, timer);
     toolbar.appendChild(recordBtn);
   }
 }
 
-export function setupClaudianButton(plugin: Plugin, settings: GijiSettings): () => void {
+export function setupClaudianButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTimer): () => void {
   function scan() {
     const toolbars = document.querySelectorAll(TOOLBAR_SELECTOR);
     for (let i = 0; i < toolbars.length; i++) {
-      injectToolbar(plugin, settings, toolbars[i] as HTMLElement);
+      injectToolbar(plugin, settings, toolbars[i] as HTMLElement, timer);
     }
   }
 
   scan();
-  refreshBridgeButtons(settings).catch(() => {});
+  const showBridge = shouldShowBridgeButton(settings.recordingMethod);
+  if (showBridge) {
+    refreshBridgeButtons(settings).catch(() => {});
+  }
 
   const observer = new MutationObserver((mutations) => {
     let shouldScan = false;
@@ -269,12 +283,14 @@ export function setupClaudianButton(plugin: Plugin, settings: GijiSettings): () 
 
   observer.observe(document.body, { childList: true, subtree: true });
 
-  const interval = setInterval(() => {
-    refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
-  }, 5000);
+  const interval = showBridge
+    ? setInterval(() => {
+        refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
+      }, 5000)
+    : null;
 
   return () => {
-    clearInterval(interval);
+    if (interval) clearInterval(interval);
     observer.disconnect();
     document.querySelectorAll(`[${BTN_MARK}]`).forEach((btn) => btn.remove());
   };

@@ -22,7 +22,7 @@ export default class GijiPlugin extends Plugin {
 
     this.addSettingTab(new GijiSettingsTab(this.app, this));
 
-    this.register(setupClaudianButton(this, this.settings));
+    this.register(setupClaudianButton(this, this.settings, this.recordingTimer));
 
     this.addCommand({
       id: "record-start",
