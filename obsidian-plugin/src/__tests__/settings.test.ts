@@ -17,6 +17,7 @@ test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{year}}"));
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{second}}"));
   assert.equal(DEFAULT_SETTINGS.audioSource, "mix");
+  assert.equal(DEFAULT_SETTINGS.recordingMethod, "bridge");
 });
 
 test("DEFAULT_SETTINGS has new feature flags", () => {

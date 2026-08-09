@@ -7,6 +7,7 @@ export type SttProviderId = "openai" | "google" | "groq";
 export type LlmProviderId = "claudian" | "cloud" | "ollama";
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
+export type RecordingMethodId = "bridge" | "direct";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -30,6 +31,7 @@ export interface GijiSettings {
   recordingSaveDir: string;
   recordingFileNameTemplate: string;
   audioSource: AudioSourceId;
+  recordingMethod: RecordingMethodId;
   appendRecordEnabled: boolean;
   // ② 文字起こし（保存・挿入）
   autoSaveTranscript: boolean;
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
   audioSource: "mix",
+  recordingMethod: "bridge",
   appendRecordEnabled: true,
   autoSaveTranscript: true,
   transcriptSaveDir: "Clippings",
@@ -100,6 +103,20 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setName("① 🎙️ 録音")
       .setDesc("マイク → ローカル録音ブリッジ（Python FastAPI）で WAV を録音します")
       .setHeading();
+
+    new Setting(containerEl)
+      .setName("🎙️ 録音手法")
+      .setDesc("PC ダイレクト録音はブリッジ不要でマイクのみ。Teams 会議（PC 音声）はブリッジ録音を選択")
+      .addDropdown((d) =>
+        d
+          .addOption("bridge", "ブリッジ録音（Python・PC 音声対応）")
+          .addOption("direct", "PC ダイレクト録音（ブリッジ不要・マイクのみ）")
+          .setValue(s.recordingMethod)
+          .onChange(async (v: string) => {
+            s.recordingMethod = v as RecordingMethodId;
+            await this.save();
+          })
+      );
 
     new Setting(containerEl)
       .setName("🎙️ 録音モード")

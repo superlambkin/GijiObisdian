@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { bridgeStart } from "../bridge";
-import { buildRecordingFileName } from "../audio/recorder";
+import { buildRecordingFileName, SegmentRecorder } from "../audio/recorder";
 
 // Chromium（Obsidian レンダラー）の ESM ローダーは裸の Node 組み込み指定子
 // （'fs' 等）を解決できず "Failed to resolve module specifier" になる。
@@ -11,6 +11,7 @@ import { buildRecordingFileName } from "../audio/recorder";
 // 前例: e2e7f47（child_process の静的态度 import 化）
 const SRC_FILES = [
   "../audio/recorder.ts",
+  "../audio/directRecorder.ts",
   "../bridge.ts",
   "../commands/importAudio.ts",
   "../commands/recordSegment.ts",
@@ -59,4 +60,24 @@ test("bridgeStart posts outDir/fileName from 録音 settings", async () => {
   const body = JSON.parse(calls[0].opts.body);
   assert.equal(body.outDir, "C:/rec");
   assert.equal(body.fileName, "録音_test");
+});
+
+/* ---------------- 録音手法（bridge / direct）分岐 ---------------- */
+
+test("recordingMethod=direct なら DirectRecorder に委譲（bridge 非呼出）", async () => {
+  // スタブ DirectRecorder：呼び出し回数を記録する
+  const stub = {
+    startCalls: 0,
+    isRecording: () => false,
+    start: async () => {
+      stub.startCalls++;
+      return true;
+    },
+    stop: async () => null,
+  } as any;
+  const recorder = new SegmentRecorder({} as any, stub);
+  const settings = { recordingMethod: "direct", bridgeBaseUrl: "http://bridge.invalid", audioSource: "mic" } as any;
+  const ok = await recorder.start(settings);
+  assert.equal(ok, true);
+  assert.equal(stub.startCalls, 1, "direct では DirectRecorder.start が 1 回呼ばれる");
 });
