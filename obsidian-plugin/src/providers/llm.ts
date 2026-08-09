@@ -332,9 +332,28 @@ function nonNegativeInt(v: unknown, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+/**
+ * 既定の fetch 実装を解決する。
+ * - Obsidian デスクトップ（Electron）: net.fetch を返す。
+ *   レンダラーの fetch と違い CORS を適用されないため、api.kimi.com のような
+ *   CORS 非対応エンドポイントにも到達できる。SSE ストリーミングにも対応
+ *   （Obsidian requestUrl はストリーミング非対応のため不採用）。
+ * - モバイル / テスト環境: globalThis.fetch にフォールバック。
+ */
+export function getDefaultFetch(): typeof fetch {
+  try {
+    const req = (globalThis as any).require;
+    const net = req?.("electron")?.net;
+    if (net?.fetch) return net.fetch.bind(net) as unknown as typeof fetch;
+  } catch {
+    /* Electron 不在（モバイル/テスト）はフォールバック */
+  }
+  return fetch.bind(globalThis);
+}
+
 export function createLlmProvider(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  fetchImpl: typeof fetch = getDefaultFetch()
 ): LlmProvider {
   if (settings.llmProvider === "claudian") {
     // Claudian 連携は complete() ではなく importAudio フロー側で

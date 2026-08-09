@@ -1,5 +1,5 @@
 import { GijiSettings } from "../settings";
-import { createLlmProvider } from "../providers/llm";
+import { createLlmProvider, getDefaultFetch } from "../providers/llm";
 import { getPreset } from "../providers/llmPresets";
 
 export interface LlmTestResult {
@@ -28,7 +28,7 @@ async function testClaudian(app: any): Promise<LlmTestResult> {
 export async function runLlmTest(
   settings: GijiSettings,
   app?: any,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  fetchImpl: typeof fetch = getDefaultFetch()
 ): Promise<LlmTestResult> {
   // claudian は API 呼び出しを行わない設計（既存 providers/llm.ts は throw）。
   // プラグイン検出のみで判定する。

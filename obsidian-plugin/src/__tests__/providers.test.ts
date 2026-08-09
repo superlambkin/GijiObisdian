@@ -360,6 +360,38 @@ test("unknown llmProvider throws", () => {
   );
 });
 
+// api.kimi.com 等 CORS 非対応エンドポイント対策:
+// Obsidian デスクトップ（Electron）では net.fetch（CORS 非適用・SSE 対応）を既定にし、
+// それ以外（モバイル/テスト）では globalThis.fetch にフォールバックする。
+test("getDefaultFetch prefers electron net.fetch when available (CORS bypass)", async () => {
+  const { getDefaultFetch } = await import("../providers/llm");
+  let called = 0;
+  const electronFetch = (async () => {
+    called++;
+    return { ok: true } as any;
+  }) as any;
+  const g = globalThis as any;
+  const prev = g.require;
+  g.require = (name: string) => (name === "electron" ? { net: { fetch: electronFetch } } : undefined);
+  try {
+    const f = getDefaultFetch();
+    assert.equal(typeof f, "function");
+    await f("https://api.kimi.com/coding/v1/chat/completions");
+    assert.equal(called, 1); // electron の net.fetch が使われた
+  } finally {
+    if (prev === undefined) delete g.require;
+    else g.require = prev;
+  }
+});
+
+test("getDefaultFetch falls back to global fetch when electron is unavailable", async () => {
+  const { getDefaultFetch } = await import("../providers/llm");
+  // Node テスト環境では globalThis.require は存在しない
+  assert.equal((globalThis as any).require, undefined);
+  const f = getDefaultFetch();
+  assert.equal(typeof f, "function");
+});
+
 function makeSseBody(events: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({

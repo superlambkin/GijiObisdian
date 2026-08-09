@@ -1,6 +1,6 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
-import { createLlmProvider, LlmCallStats } from "../providers/llm";
+import { createLlmProvider, getDefaultFetch, LlmCallStats } from "../providers/llm";
 import { isLlmConfigured } from "../providers/llmPresets";
 import { writeDebugLog } from "../util/debugLog";
 import {
@@ -53,7 +53,7 @@ export async function runAutoSummarize(
   manifestDir: string,
   opts: AutoSummarizeOptions = {}
 ): Promise<AutoSummarizeResult> {
-  const fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
+  const fetchImpl = opts.fetchImpl ?? getDefaultFetch();
   const summarizeStartMs = Date.now();
   const stats: LlmCallStats = { retries: 0 };
   const fmt = (v: number | undefined) => (v === undefined ? "-" : String(v));
