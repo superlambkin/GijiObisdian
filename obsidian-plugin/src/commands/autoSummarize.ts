@@ -7,8 +7,16 @@ import {
   buildTemplateSystemPrompt,
 } from "../notes/minutesTemplate";
 import { MINUTES_SYSTEM_PROMPT } from "../notes/generator";
+import { fillMinutesMetadata, formatStartTime } from "../notes/minutesMetadata";
 import { appendToClaudianInput } from "../ui/claudianApi";
 import { buildTranscriptFilename } from "../notes/saver";
+
+export interface AutoSummarizeOptions {
+  fetchImpl?: typeof fetch;
+  startTime?: Date;
+  durationSec?: number;
+  mp3Links?: string;
+}
 
 export interface AutoSummarizeResult {
   ok: boolean;
@@ -29,8 +37,9 @@ export async function runAutoSummarize(
   settings: GijiSettings,
   app: App,
   manifestDir: string,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  opts: AutoSummarizeOptions = {}
 ): Promise<AutoSummarizeResult> {
+  const fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
   if (!settings.autoSummarizeEnabled) {
     return { ok: true, skippedReason: "disabled" };
   }
@@ -49,12 +58,16 @@ export async function runAutoSummarize(
     }
 
     if (settings.llmProvider === "claudian") {
-      const date = new Date().toISOString().slice(0, 10);
+      const startTime = opts.startTime ?? new Date();
       const prompt = templateMd
-        ? buildClaudianMinutesPrompt(templateMd, transcript, settings.outputDir, date)
+        ? buildClaudianMinutesPrompt(templateMd, transcript, settings.outputDir, startTime, {
+            durationSec: opts.durationSec,
+            mp3Links: opts.mp3Links,
+          })
         : [
-            "以下の会議転写テキストを構造化された議事録 Markdown として作成し、",
+            "以下の会議転写テキストを、構造化された議事録 Markdown として作成し、",
             `Vault の ${settings.outputDir}/ に保存してください。`,
+            `【録音情報】開始時間=${formatStartTime(startTime)} / 会議時間=${opts.durationSec !== undefined ? `${Math.floor(opts.durationSec / 60)} 分 ${opts.durationSec % 60} 秒` : "不明"} / 録音ファイル=${opts.mp3Links ?? ""}`,
             "",
             "【転写テキスト】",
             transcript,
@@ -73,7 +86,7 @@ export async function runAutoSummarize(
     const systemPrompt = templateMd ? buildTemplateSystemPrompt(templateMd) : MINUTES_SYSTEM_PROMPT;
     const md = await llm.complete(systemPrompt, transcript);
 
-    const now = new Date();
+    const now = opts.startTime ?? new Date();
     const fileName = buildTranscriptFilename(now, settings.fileNameTemplate);
     const dir = (settings.outputDir || "").trim() || "議事録";
     const basePath = `${dir}/${fileName}.md`;
@@ -83,7 +96,11 @@ export async function runAutoSummarize(
       path = `${dir}/${fileName}-${counter}.md`;
       counter++;
     }
-    const finalMd = (templateMd ? md.trim() + "\n" : md);
+    const finalMd = fillMinutesMetadata(templateMd ? md.trim() + "\n" : md, {
+      startTime: now,
+      durationSec: opts.durationSec,
+      mp3Links: opts.mp3Links,
+    });
     await app.vault.create(path, finalMd);
     new Notice("✅ 議事録を生成しました");
     return { ok: true };

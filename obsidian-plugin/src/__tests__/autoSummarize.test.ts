@@ -61,20 +61,17 @@ test("no-llm-configured: cloud with empty apiKey returns skippedReason", async (
   assert.equal(res.skippedReason, "no-llm-configured");
 });
 
-test("cloud: success creates a new note via vault.create", async () => {
+test("cloud: success creates note with metadata filled and 録音開始時刻ファイル名", async () => {
   const fetchImpl = (async () => ({
     ok: true,
-    json: async () => ({ choices: [{ message: { content: "# 議事録\n議事録 by transcript content\n- 要約 A" } }] }),
+    json: async () => ({ choices: [{ message: { content: "| 🕐 開始時間 | X |\n| ⏱️ 会議時間 | Y |\n議事録内容" } }] }),
   })) as any;
 
   let createdPath: string | null = null;
   let createdContent: string | null = null;
   const fakeApp: any = {
     vault: {
-      adapter: {
-        // テンプレ無し → loadMinutesTemplate が throw するためテンプレロード失敗ケースを許容
-        // ここでは template を使わず MINUTES_SYSTEM_PROMPT を使う path を通すためスタブ不要
-      },
+      adapter: {},
       async create(path: string, content: string) {
         createdPath = path;
         createdContent = content;
@@ -85,18 +82,19 @@ test("cloud: success creates a new note via vault.create", async () => {
     },
   };
 
-  const res = await runAutoSummarize(
-    "transcript content",
-    baseSettings,
-    fakeApp,
-    "/manifest/dir",
-    fetchImpl
-  );
+  const start = new Date(2026, 7, 9, 13, 51);
+  const res = await runAutoSummarize("transcript content", baseSettings, fakeApp, "/manifest/dir", {
+    fetchImpl,
+    startTime: start,
+    durationSec: 83,
+    mp3Links: "[🎙️ 録音を再生](file:///C:/a.mp3)",
+  });
   assert.equal(res.ok, true);
-  assert.ok(createdPath, "vault.create should be called");
-  assert.ok((createdPath as string).startsWith("議事録/議事録_"));
-  assert.match((createdContent as string), /議事録/);
-  assert.match((createdContent as string), /transcript content/);
+  assert.ok(createdPath);
+  assert.match(createdPath as string, /議事録_2026年08月09日13時51分\.md$/);
+  assert.match(createdContent as string, /2026-08-09 13:51/);
+  assert.match(createdContent as string, /1 分 23 秒/);
+  assert.match(createdContent as string, /録音を再生/);
 });
 
 test("ollama: empty apiKey is allowed", async () => {
@@ -120,13 +118,13 @@ test("ollama: empty apiKey is allowed", async () => {
     { ...baseSettings, llmProvider: "ollama", llmApiKey: "" },
     fakeApp,
     "/manifest/dir",
-    fetchImpl
+    { fetchImpl }
   );
   assert.equal(res.ok, true);
   assert.ok(createdPath);
 });
 
-test("claudian: appendToClaudianInput receives prompt containing SUMMARY command", async () => {
+test("claudian: appendToClaudianInput receives prompt with 録音情報", async () => {
   const appendCalls: string[] = [];
   const fakeApp: any = {
     plugins: {
@@ -138,18 +136,19 @@ test("claudian: appendToClaudianInput receives prompt containing SUMMARY command
       },
     },
   };
+  const start = new Date(2026, 7, 9, 13, 51);
   const res = await runAutoSummarize(
     "transcript body",
     { ...baseSettings, llmProvider: "claudian" },
     fakeApp,
-    "/manifest/dir"
+    "/manifest/dir",
+    { startTime: start, durationSec: 83, mp3Links: "MP3LINK" }
   );
   assert.equal(res.ok, true);
   assert.equal(appendCalls.length, 1);
-  // buildClaudianMinutesPrompt が出力するプロンプトは transcript body を含む
   assert.match(appendCalls[0], /transcript body/);
-  // SUMMARY 命令が含まれている（Claude が議事録を生成する指示）
-  assert.match(appendCalls[0], /議事録|SUMMARY|要約/);
+  assert.match(appendCalls[0], /開始時間=2026-08-09 13:51/);
+  assert.match(appendCalls[0], /MP3LINK/);
 });
 
 test("claudian: missing plugin returns error result", async () => {
@@ -178,7 +177,7 @@ test("cloud: LLM 401 surfaces error", async () => {
     baseSettings,
     fakeApp,
     "/manifest/dir",
-    fetchImpl
+    { fetchImpl }
   );
   assert.equal(res.ok, false);
   assert.match(res.error ?? "", /401/);
