@@ -10,6 +10,10 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.autoSaveTranscript, true);
   assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "議事録");
   assert.equal(DEFAULT_SETTINGS.outputDir, "議事録");
+  assert.equal(
+    DEFAULT_SETTINGS.transcriptFileNameTemplate,
+    "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分"
+  );
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {

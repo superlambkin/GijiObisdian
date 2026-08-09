@@ -37,6 +37,7 @@ export interface GijiSettings {
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
   fileNameTemplate: string;
+  transcriptFileNameTemplate: string;
   insertToClaudianEnabled: boolean;
   // ④ その他
   emailSummaryEnabled: boolean;
@@ -74,6 +75,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   autoSaveTranscript: true,
   transcriptSaveDir: "議事録",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
+  transcriptFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
   insertToClaudianEnabled: true,
   emailSummaryEnabled: false,
 };
@@ -318,6 +320,16 @@ export class GijiSettingsTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(s.fileNameTemplate).onChange(async (v: string) => {
           s.fileNameTemplate = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("転写ファイル名テンプレート（録音_...）")
+      .setDesc("文字起こしMDのファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .addText((t) =>
+        t.setValue(s.transcriptFileNameTemplate).onChange(async (v: string) => {
+          s.transcriptFileNameTemplate = v;
           await this.save();
         })
       );
