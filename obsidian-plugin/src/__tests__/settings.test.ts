@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS } from "../settings";
+import { DEFAULT_SETTINGS, isBridgeSettingDisabled } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttProvider, "openai");
@@ -26,4 +26,9 @@ test("DEFAULT_SETTINGS has new feature flags", () => {
   assert.equal(DEFAULT_SETTINGS.minutesTemplateVaultPath, "00_Vault管理/議事録テンプレート.md");
   assert.equal(DEFAULT_SETTINGS.minutesTemplateFile, "議事録テンプレート.md");
   assert.equal(DEFAULT_SETTINGS.emailSummaryEnabled, false);
+});
+
+test("isBridgeSettingDisabled", () => {
+  assert.equal(isBridgeSettingDisabled("bridge"), false);
+  assert.equal(isBridgeSettingDisabled("direct"), true);
 });

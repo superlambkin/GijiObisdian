@@ -45,6 +45,11 @@ export interface GijiSettings {
 /** 録音ファイル保存場所のデフォルト（PC の絶対パス: C:\Users\<ユーザ名>\Music\GijiObsidian） */
 export const DEFAULT_RECORDING_SAVE_DIR = join(homedir(), "Music", "GijiObsidian");
 
+/** 録音手法がブリッジ以外（ダイレクト録音）のとき、ブリッジ関連設定をグレーアウトする */
+export function isBridgeSettingDisabled(recordingMethod: string): boolean {
+  return recordingMethod !== "bridge";
+}
+
 export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "openai",
   sttApiKey: "",
@@ -115,13 +120,19 @@ export class GijiSettingsTab extends PluginSettingTab {
           .onChange(async (v: string) => {
             s.recordingMethod = v as RecordingMethodId;
             await this.save();
+            updateBridgeDisabled(v);
           })
       );
+
+    let audioMode: any;
+    let bridgeUrl: any;
+    let bridgeDir: any;
 
     new Setting(containerEl)
       .setName("🎙️ 録音モード")
       .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ・ブリッジ v0.2.0 以降が必要）")
-      .addDropdown((d) =>
+      .addDropdown((d) => {
+        audioMode = d;
         d
           .addOption("mix", "マイク + PC 音声（WASAPI ループバック）")
           .addOption("mic", "マイクのみ（従来）")
@@ -130,26 +141,36 @@ export class GijiSettingsTab extends PluginSettingTab {
           .onChange(async (v: string) => {
             s.audioSource = v as AudioSourceId;
             await this.save();
-          })
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName("ブリッジ URL")
-      .addText((t) =>
+      .addText((t) => {
+        bridgeUrl = t;
         t.setValue(s.bridgeBaseUrl).onChange(async (v: string) => {
           s.bridgeBaseUrl = v;
           await this.save();
-        })
-      );
+        });
+      });
 
     new Setting(containerEl)
       .setName("ブリッジのディレクトリ")
-      .addText((t) =>
+      .addText((t) => {
+        bridgeDir = t;
         t.setValue(s.bridgeDir).onChange(async (v: string) => {
           s.bridgeDir = v;
           await this.save();
-        })
-      );
+        });
+      });
+
+    const updateBridgeDisabled = (method: string) => {
+      const disabled = isBridgeSettingDisabled(method);
+      audioMode?.setDisabled(disabled);
+      bridgeUrl?.setDisabled(disabled);
+      bridgeDir?.setDisabled(disabled);
+    };
+    updateBridgeDisabled(s.recordingMethod);
 
     new Setting(containerEl)
       .setName("録音ファイルの保存場所")
