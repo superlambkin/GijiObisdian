@@ -319,10 +319,31 @@ test("complete: SSE で onFirstChunk/onChunk が発火し累積文字数が増�
     onChunk: (n) => events.push(n),
   });
   assert.equal(text, "議事録テスト");
-  assert.equal(events[0], "first"); // TTFB が最初
+  // NEW 修正後: text delta が届いた時点で TTFB。最初の chunk に text が含まれるので
+  // events は ["first", 2, 4, 6, ...] となる（2 = "議事" の長さ）。
+  assert.equal(events[0], "first");
+  assert.equal(events[1], 2); // 最初の onChunk は 2
   const nums = events.filter((e): e is number => typeof e === "number");
   assert.deepEqual(nums, [...nums].sort((a, b) => a - b)); // 単調増加
   assert.equal(nums[nums.length - 1], "議事録テスト".length);
+});
+
+test("complete: 最初の chunk が空/keepalive のとき text 到着まで onFirstChunk は遅延", async () => {
+  const chunks = [
+    ": keep-alive\n\n", // 空（text なし）
+    'data: {"choices":[{"delta":{"content":"本"}}]}\n\n',
+    "data: [DONE]\n\n",
+  ];
+  const fetchImpl = (async () => sseResponse(chunks)) as any;
+  const llm = createLlmProvider(openAiSettings, fetchImpl);
+  const order: string[] = [];
+  const text = await llm.complete("sys", "user", undefined, {
+    onFirstChunk: () => order.push("first"),
+    onChunk: (n) => order.push(`chunk:${n}`),
+  });
+  assert.equal(text, "本");
+  // "first" が必ず "chunk:1" より前
+  assert.ok(order.indexOf("first") < order.indexOf("chunk:1"));
 });
 
 test("complete: 非SSE フォールバックでも onFirstChunk/onChunk が1回ずつ発火", async () => {

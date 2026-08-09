@@ -129,15 +129,18 @@ async function consumeSse(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (ttfbMs === undefined) {
-      ttfbMs = Date.now() - startedMs;
-      progress?.onFirstChunk?.();
-    }
     buf += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buf.indexOf("\n")) >= 0) {
       handleLine(buf.slice(0, idx));
       buf = buf.slice(idx + 1);
+    }
+    // NEW 修正（バックグラウンドレビュー）: text delta が届いた最初の時点で TTFB を記録。
+    // keepalive/usage-only 等の空チャンクで過早に onFirstChunk を発火させない。
+    // onFirstChunk は「初回 text delta 到着」のシグナルなので notifyProgress より先に呼ぶ。
+    if (ttfbMs === undefined && text.length > 0) {
+      ttfbMs = Date.now() - startedMs;
+      progress?.onFirstChunk?.();
     }
     notifyProgress();
   }
