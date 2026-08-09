@@ -4,6 +4,7 @@ import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
 import { appendToClaudianInput } from "./claudianApi";
+import { runAutoSummarize } from "../commands/autoSummarize";
 import { RecordingTimer } from "./recordingTimer";
 
 const BTN_MARK = "data-giji-btn";
@@ -145,6 +146,30 @@ function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonEle
   return btn;
 }
 
+/**
+ * 停止後の後処理: 転写保存（任意）+ 議事録自動生成。
+ * コマンドフロー（recordSegment.ts::stopSegment）と同等の要約自動生成を
+ * ツールバー 🎙️ ボタンにも配線する。autoSummarizeImpl はテスト用に注入可能。
+ */
+export async function saveTranscriptAndAutoSummarize(
+  plugin: Plugin,
+  settings: GijiSettings,
+  text: string,
+  durationSec: number | undefined,
+  autoSummarizeImpl: typeof runAutoSummarize = runAutoSummarize,
+): Promise<void> {
+  if (settings.autoSaveTranscript) {
+    try {
+      const saved = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
+      new Notice(saved.appended ? `📄 已追记到议事录: ${saved.path}` : `📄 转写已保存: ${saved.path}`);
+    } catch (err: any) {
+      new Notice(`保存转写失败: ${err?.message ?? err}`);
+    }
+  }
+  // 議事録の自動生成（fire-and-forget。内部で Notice 表示）
+  void autoSummarizeImpl(text, settings, plugin.app, plugin.manifest.dir);
+}
+
 function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTimer): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.classList.add("giji-record-btn", "claudian-action-btn");
@@ -181,14 +206,8 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         state.recorder = new SegmentRecorder(plugin.app);
         if (!text) return;
 
-        if (settings.autoSaveTranscript) {
-          try {
-            const saved = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
-            new Notice(saved.appended ? `📄 已追记到议事录: ${saved.path}` : `📄 转写已保存: ${saved.path}`);
-          } catch (err: any) {
-            new Notice(`保存转写失败: ${err?.message ?? err}`);
-          }
-        }
+        // 転写保存（任意）+ 議事録の自動生成（要約）
+        await saveTranscriptAndAutoSummarize(plugin, settings, text, durationSec);
 
         // 設定「結果を Claudian 入力欄に挿入」が OFF の場合は挿入しない
         if (settings.insertToClaudianEnabled) {
