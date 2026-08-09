@@ -7,9 +7,10 @@ import wave
 from typing import Optional
 
 import numpy as np
-import sounddevice as sd
+import soundcard as sc
 
 import config
+from audio_source import AudioSource, mix_pcm
 
 # MP3 64 kbps（音声向け圧縮）: 8,000 bytes/sec
 MP3_BYTES_PER_SEC = 8000
@@ -21,14 +22,25 @@ MAX_SEGMENT_SAMPLES = MAX_SEGMENT_SEC * config.SAMPLE_RATE
 
 
 class Recorder:
-    """Records mic audio to 16kHz mono, saved as MP3 64kbps (segments <= 24MB)."""
+    """Records audio to 16kHz mono, saved as MP3 64kbps (segments <= 24MB).
+
+    Uses the `soundcard` library (blocking API). One thread per source
+    (mic / pc loopback) loops `record(numframes=CHUNK)`. Collected frames
+    are concatenated in `stop()` and mixed/passed-through as appropriate.
+    """
+
+    # 0.1 sec at 16 kHz — small chunk for responsive stop()/accurate duration
+    CHUNK_SAMPLES = 1600
 
     def __init__(self):
-        self._stream = None
-        self._frames = []
+        self._sources = []  # list of (soundcard Microphone, "mic" | "pc")
+        self._threads = []
+        self._frames = {"mic": [], "pc": []}
         self._session_id = None
         self._out_dir_override: Optional[str] = None
         self._file_name: Optional[str] = None
+        self._audio_source: AudioSource = AudioSource.MIC
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
 
     @property
@@ -38,26 +50,63 @@ class Recorder:
     def _out_dir(self):
         return config.TMP_DIR or tempfile.gettempdir()
 
-    def start(self, out_dir: Optional[str] = None, file_name: Optional[str] = None) -> str:
+    def start(
+        self,
+        out_dir: Optional[str] = None,
+        file_name: Optional[str] = None,
+        audio_source: str = "mic",
+    ) -> str:
         with self._lock:
-            if self._stream is not None:
+            if self._threads:
                 raise RuntimeError("already_recording")
-            self._frames = []
+            source = AudioSource(audio_source)
+            self._sources = []
+            self._threads = []
+            self._frames = {"mic": [], "pc": []}
+            self._stop_event.clear()
             self._session_id = str(uuid.uuid4())
             self._out_dir_override = out_dir or None
             self._file_name = file_name or None
-            self._stream = sd.InputStream(
-                samplerate=config.SAMPLE_RATE,
-                channels=config.CHANNELS,
-                dtype="int16",
-                callback=self._on_audio,
-            )
-            self._stream.start()
+            self._audio_source = source
+
+            if source in (AudioSource.MIC, AudioSource.MIX):
+                mic = sc.get_microphone(
+                    sc.default_microphone().name, include_loopback=False
+                )
+                self._sources.append((mic, "mic"))
+            if source in (AudioSource.PC_LOOPBACK, AudioSource.MIX):
+                speaker = sc.default_speaker()
+                loopback = sc.get_microphone(speaker.name, include_loopback=True)
+                self._sources.append((loopback, "pc"))
+
+            for source_obj, name in self._sources:
+                t = threading.Thread(
+                    target=self._record_loop,
+                    args=(source_obj, name),
+                    daemon=True,
+                )
+                t.start()
+                self._threads.append(t)
             return self._session_id
 
-    def _on_audio(self, indata, frames, time, status):
-        with self._lock:
-            self._frames.append(indata.copy())
+    def _record_loop(self, source_obj, name: str) -> None:
+        """Blocking recording loop — runs in its own thread.
+
+        soundcard returns float32 in [-1, 1]; we convert to int16.
+        """
+        while not self._stop_event.is_set():
+            try:
+                data = source_obj.record(
+                    numframes=self.CHUNK_SAMPLES,
+                    samplerate=config.SAMPLE_RATE,
+                    channels=config.CHANNELS,
+                )
+                pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
+                with self._lock:
+                    self._frames[name].append(pcm)
+            except Exception as e:  # pragma: no cover — depends on hardware
+                print(f"[recorder] {name} error: {e}")
+                break
 
     def _write_wav(self, path: str, audio: np.ndarray) -> None:
         with wave.open(path, "wb") as wf:
@@ -100,15 +149,26 @@ class Recorder:
 
     def stop(self) -> dict:
         with self._lock:
-            if self._stream is None:
+            if not self._threads:
                 raise RuntimeError("not_recording")
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+            self._stop_event.set()
+            for t in self._threads:
+                t.join(timeout=2.0)
+            self._threads = []
+            self._sources = []
+
             out_dir = self._out_dir_override or self._out_dir()
             os.makedirs(out_dir, exist_ok=True)
             name = self._file_name or f"giji_{self._session_id}"
-            audio = np.concatenate(self._frames, axis=0) if self._frames else np.zeros((0, 1), dtype=np.int16)
+            source = self._audio_source
+
+            mic_frames = self._frames["mic"]
+            pc_frames = self._frames["pc"]
+            audio = mix_pcm(
+                mic_frames if mic_frames else None,
+                pc_frames if pc_frames else None,
+                config.CHANNELS,
+            )
             duration = (len(audio) / config.SAMPLE_RATE) if len(audio) else 0.0
 
             warning = None
@@ -121,10 +181,17 @@ class Recorder:
                 self._write_wav(wav_path, audio)
                 paths = [wav_path]
 
+            audio_source_value = source.value
             self._session_id = None
             self._out_dir_override = None
             self._file_name = None
-            result = {"audioPaths": paths, "wavPath": paths[0], "durationSec": round(float(duration), 3)}
+            self._audio_source = AudioSource.MIC
+            result = {
+                "audioPaths": paths,
+                "wavPath": paths[0],
+                "durationSec": round(float(duration), 3),
+                "audioSource": audio_source_value,
+            }
             if warning:
                 result["warning"] = warning
             return result

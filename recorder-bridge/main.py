@@ -25,6 +25,8 @@ class StartReq(BaseModel):
     # プラグイン設定「録音ファイルの保存場所」「録音ファイル名テンプレート」から渡される
     outDir: Optional[str] = None
     fileName: Optional[str] = None
+    # 録音モード: mic（マイクのみ）/ pcLoopback（PC 音声のみ）/ mix（マイク+PC 音声）
+    audioSource: Optional[str] = "mic"
 
 
 class StopReq(BaseModel):
@@ -39,10 +41,17 @@ def health():
 @app.post("/record/start")
 def record_start(req: StartReq):
     try:
-        sid = _recorder.start(out_dir=req.outDir, file_name=req.fileName)
+        sid = _recorder.start(
+            out_dir=req.outDir,
+            file_name=req.fileName,
+            audio_source=req.audioSource or "mic",
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    return {"recording": True, "sessionId": sid}
+    except Exception as e:
+        # WASAPI ループバック非対応・デバイス無し・不正な audioSource 等
+        raise HTTPException(status_code=500, detail=f"audio_source_failed: {e}")
+    return {"recording": True, "sessionId": sid, "audioSource": req.audioSource or "mic"}
 
 
 @app.post("/record/stop")

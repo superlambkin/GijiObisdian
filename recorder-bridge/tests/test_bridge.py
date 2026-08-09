@@ -78,7 +78,8 @@ def test_long_recording_is_split_into_segments(tmp_path, monkeypatch):
     r = client.post("/record/start", json={"format": "wav"})
     sid = r.json()["sessionId"]
     # 実マイクの録音フレームを 0.3 秒分の無音に差し替えて分割を確実にする
-    _recorder._frames = [np.zeros((1600 * 3, 1), dtype=np.int16)]
+    # (soundcard 仕様に合わせてキーでアクセス)
+    _recorder._frames["mic"] = [np.zeros((1600 * 3, 1), dtype=np.int16)]
     r = client.post("/record/stop", json={"sessionId": sid})
     assert r.status_code == 200
     body = r.json()
@@ -86,3 +87,32 @@ def test_long_recording_is_split_into_segments(tmp_path, monkeypatch):
     for p in body["audioPaths"]:
         assert p.endswith(".mp3")
     assert body["audioPaths"][0].endswith("-1.mp3")
+
+
+def test_mix_recording_echoes_audio_source(tmp_path, monkeypatch):
+    """mix モード: audioSource が start/stop のレスポンスに反映され MP3 が生成される"""
+    import numpy as np
+    from main import _recorder
+
+    monkeypatch.setattr("config.TMP_DIR", str(tmp_path))
+
+    r = client.post("/record/start", json={"format": "wav", "audioSource": "mix"})
+    assert r.status_code == 200
+    assert r.json()["audioSource"] == "mix"
+    sid = r.json()["sessionId"]
+    # 両ソースのフレームを差し替えてミックス経路を確実に通す
+    _recorder._frames["mic"] = [np.full((1600, 1), 1000, dtype=np.int16)]
+    _recorder._frames["pc"] = [np.full((1600, 1), 2000, dtype=np.int16)]
+    r = client.post("/record/stop", json={"sessionId": sid})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["audioSource"] == "mix"
+    assert body["audioPaths"][0].endswith(".mp3")
+
+
+def test_invalid_audio_source_rejected(tmp_path, monkeypatch):
+    """不正な audioSource は 500 audio_source_failed（状態は残らない）"""
+    monkeypatch.setattr("config.TMP_DIR", str(tmp_path))
+    r = client.post("/record/start", json={"format": "wav", "audioSource": "bogus"})
+    assert r.status_code == 500
+    assert "audio_source_failed" in r.json()["detail"]
