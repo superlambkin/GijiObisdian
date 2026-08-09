@@ -1,4 +1,5 @@
 import { GijiSettings } from "../settings";
+import { getPreset } from "./llmPresets";
 
 /** LLM 呼び出しの計測結果（complete() の stats 引数に書き戻す） */
 export interface LlmCallStats {
@@ -338,25 +339,46 @@ export function createLlmProvider(
     // 「要約プロンプトを Claudian 入力欄に挿入」する方式のため、ここでは生成できない
     throw new Error("claudian プロバイダーは createLlmProvider ではなく Claudian 連携フローで処理されます");
   }
+  const preset = getPreset(settings.llmProvider);
+  if (!preset) {
+    throw new Error(`未知の llmProvider: ${settings.llmProvider}`);
+  }
   const callOpts: CallOptions = {
     timeoutMs: positiveInt(settings.llmTimeoutMs, 90000),
     maxRetries: nonNegativeInt(settings.llmMaxRetries, 2),
   };
-  if (settings.llmProvider === "ollama") {
-    // ローカル Ollama は常に OpenAI 互換・usage 非対応の可能性があるため stream_options を送らない
-    return new OpenAiCompatibleLlm("ollama", settings.llmBaseUrl, settings.llmModel, "", fetchImpl, false, callOpts);
-  }
-  if (settings.llmApiFormat === "anthropic") {
+  // ユーザーが空欄にした場合、preset の既定値にフォールバック
+  const baseUrl = settings.llmBaseUrl.trim() || preset.baseUrl;
+  const model = settings.llmModel.trim() || preset.model;
+  // API 形式:
+  //   - 上書きフラグ ON → 手動設定
+  //   - 既存ユーザの後方互換 (cloud プリセットのみ): settings.llmApiFormat が preset 既定と一致しない
+  //     → 手動設定を尊重（既存ユーザの llmProvider="cloud" + llmApiFormat="anthropic" を救う）
+  //   - ollama: 強制 OpenAI 形式（既存挙動維持、stream_options 非対応のため）
+  //   - それ以外 → preset 既定
+  const apiFormat =
+    preset.id === "ollama"
+      ? "openai"
+      : settings.llmApiFormatOverride ||
+          (preset.id === "cloud" && settings.llmApiFormat !== preset.apiFormat)
+        ? settings.llmApiFormat
+        : preset.apiFormat;
+  if (apiFormat === "anthropic") {
+    // llmMaxTokens が DEFAULT_SETTINGS の初期値（32000）のままなら preset 既定値を使う
+    const effectiveMaxTokens =
+      settings.llmMaxTokens === 32000 ? preset.defaultMaxTokens : positiveInt(settings.llmMaxTokens, preset.defaultMaxTokens);
     return new AnthropicLlm(
-      "anthropic",
-      settings.llmBaseUrl,
-      settings.llmModel,
+      preset.id,
+      baseUrl,
+      model,
       settings.llmApiKey,
-      settings.anthropicVersion || "2023-06-01",
-      positiveInt(settings.llmMaxTokens, 32000),
+      settings.anthropicVersion || preset.anthropicVersion || "2023-06-01",
+      effectiveMaxTokens,
       fetchImpl,
       callOpts
     );
   }
-  return new OpenAiCompatibleLlm("cloud", settings.llmBaseUrl, settings.llmModel, settings.llmApiKey, fetchImpl, true, callOpts);
+  // Ollama は stream_options 非対応のため includeUsage=false（既存挙動維持）
+  const includeUsage = preset.id !== "ollama";
+  return new OpenAiCompatibleLlm(preset.id, baseUrl, model, settings.llmApiKey, fetchImpl, includeUsage, callOpts);
 }

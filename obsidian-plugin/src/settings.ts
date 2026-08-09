@@ -4,7 +4,8 @@ import { mkdirSync } from "fs";
 
 export type SttLang = "auto" | "zh" | "ja" | "en";
 export type SttProviderId = "openai" | "google" | "groq";
-export type LlmProviderId = "claudian" | "cloud" | "ollama";
+import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
+export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
@@ -27,6 +28,10 @@ export interface GijiSettings {
   llmTimeoutMs: number;
   /** LLM リトライ回数（デフォルト 2。0 で無効） */
   llmMaxRetries: number;
+  /** 上級者向け詳細設定の折り畳み状態（永続化） */
+  llmAdvancedOpen: boolean;
+  /** API 形式を preset ではなく手動で上書きする */
+  llmApiFormatOverride: boolean;
   /** 性能調査用デバッグログ（logs/giji-YYYY-MM-DD.log）を出力する */
   debugLog: boolean;
   autoSummarizeEnabled: boolean;
@@ -74,6 +79,8 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmMaxTokens: 32000,
   llmTimeoutMs: 90000,
   llmMaxRetries: 2,
+  llmAdvancedOpen: false,
+  llmApiFormatOverride: false,
   debugLog: true,
   autoSummarizeEnabled: true,
   outputDir: "議事録",
@@ -99,6 +106,12 @@ export const DEFAULT_SETTINGS: GijiSettings = {
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { runSttTest } from "./test/sttTest";
 import { runLlmTest } from "./test/llmTest";
+import {
+  LlmPresetId,
+  LLM_PRESETS,
+  applyPreset,
+  PRESET_DISPLAY_ORDER,
+} from "./providers/llmPresets";
 
 export class GijiSettingsTab extends PluginSettingTab {
   constructor(app: App, private plugin: any) {
@@ -356,120 +369,28 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setDesc("転写テキスト → LLM で議事録を生成します（「音声をインポートして議事録生成」コマンドで使用）")
       .setHeading();
 
-    new Setting(containerEl)
-      .setName("LLM プロバイダー")
-      .setDesc("Claudian（デフォルト）: 既存 Claudian の LLM に要約プロンプトを挿入します")
-      .addDropdown((d) =>
-        d.addOption("claudian", "Claudian（デフォルト）")
-          .addOption("cloud", "クラウド（OpenAI 互換 API）")
-          .addOption("ollama", "Ollama（ローカル）")
-          .setValue(s.llmProvider)
-          .onChange(async (v: string) => {
-            s.llmProvider = v as LlmProviderId;
-            await this.save();
-          })
-      );
+    // === 基本セクション（常時表示） ===
 
     new Setting(containerEl)
-      .setName("LLM baseUrl")
-      .setDesc("クラウド / Ollama 選択時に使用")
-      .addText((t) =>
-        t.setValue(s.llmBaseUrl).onChange(async (v: string) => {
-          s.llmBaseUrl = v;
+      .setName("🔌 プリセット")
+      .setDesc("主要プロバイダのプリセットです。選択すると baseUrl・モデル・API 形式・既定 max tokens が自動入力されます")
+      .addDropdown((d) => {
+        for (const id of PRESET_DISPLAY_ORDER) {
+          d.addOption(id, LLM_PRESETS[id].displayName);
+        }
+        return d.setValue(s.llmProvider).onChange(async (v: string) => {
+          Object.assign(s, applyPreset(s, v as LlmPresetId));
           await this.save();
-        })
-      );
+          await this.display();
+        });
+      });
 
     new Setting(containerEl)
-      .setName("LLM モデル")
-      .setDesc("例: deepseek-chat / gpt-4o-mini / qwen2.5 など")
-      .addText((t) =>
-        t.setValue(s.llmModel).onChange(async (v: string) => {
-          s.llmModel = v;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("LLM API 形式")
-      .setDesc("OpenAI 互換（/chat/completions）または Anthropic 互換（/v1/messages）")
-      .addDropdown((d) =>
-        d
-          .addOption("openai", "OpenAI 互換（/chat/completions）")
-          .addOption("anthropic", "Anthropic 互換（/v1/messages）")
-          .setValue(s.llmApiFormat)
-          .onChange(async (v: string) => {
-            s.llmApiFormat = v as LlmApiFormat;
-            await this.save();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Anthropic API バージョン")
-      .setDesc("例: 2023-06-01（Anthropic 形式選択時のみ使用）")
-      .addText((t) =>
-        t.setValue(s.anthropicVersion).onChange(async (v: string) => {
-          s.anthropicVersion = v;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Max tokens")
-      .setDesc("LLM 出力トークン上限（Anthropic 形式では必須パラメータ）")
-      .addText((t) =>
-        t.setValue(String(s.llmMaxTokens)).onChange(async (v: string) => {
-          const n = parseInt(v, 10);
-          s.llmMaxTokens = Number.isFinite(n) && n > 0 ? n : 32000;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("⏱️ LLM タイムアウト（ms）")
-      .setDesc("1 試行あたりの上限時間。超えると中断してリトライします（デフォルト: 90000）")
-      .addText((t) =>
-        t.setValue(String(s.llmTimeoutMs)).onChange(async (v: string) => {
-          const n = parseInt(v, 10);
-          s.llmTimeoutMs = Number.isFinite(n) && n > 0 ? n : 90000;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("🔁 LLM リトライ回数")
-      .setDesc("タイムアウト・429・5xx 時に指数バックオフで再試行する回数（デフォルト: 2。0 で無効）")
-      .addText((t) =>
-        t.setValue(String(s.llmMaxRetries)).onChange(async (v: string) => {
-          const n = parseInt(v, 10);
-          s.llmMaxRetries = Number.isFinite(n) && n >= 0 ? n : 2;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("📋 要約自動生成")
-      .setDesc("ON の場合、転写完了後に自動で議事録を生成します（OFF で従来通り）")
-      .addToggle((t) =>
-        t.setValue(s.autoSummarizeEnabled).onChange(async (v: boolean) => {
-          s.autoSummarizeEnabled = v;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("📝 デバッグログ出力")
-      .setDesc("ON で giji-obsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
-      .addToggle((t) =>
-        t.setValue(s.debugLog).onChange(async (v: boolean) => {
-          s.debugLog = v;
-          await this.save();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("LLM API キー")
-      .setDesc("Ollama（ローカル）の場合は不要です")
+      .setName("🔑 API キー")
+      .setDesc(
+        LLM_PRESETS[s.llmProvider as keyof typeof LLM_PRESETS]?.apiKeyHint ??
+          "LLM プロバイダの API キー"
+      )
       .addText((t) =>
         t.setValue(s.llmApiKey).onChange(async (v: string) => {
           s.llmApiKey = v;
@@ -479,7 +400,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("🧪 接続テスト")
-      .setDesc("cloud/ollama は最小プロンプトで疎通確認、claudian はプラグイン連携を検出（テキスト挿入なし・claudian 選択時はビューが開きます）")
+      .setDesc("プリセット＋API キーで疎通確認します。claudian はプラグイン連携を検出")
       .addButton((btn) =>
         btn.setButtonText("テスト開始").onClick(async () => {
           btn.setDisabled(true).setButtonText("テスト中…");
@@ -492,6 +413,138 @@ export class GijiSettingsTab extends PluginSettingTab {
           }
         })
       );
+
+    // === 上級者向け詳細設定（折り畳み） ===
+
+    new Setting(containerEl)
+      .setName("⚙️ 上級者向け詳細設定")
+      .setDesc("baseUrl・モデル・API 形式・タイムアウトなどの詳細設定")
+      .addToggle((t) =>
+        t.setValue(s.llmAdvancedOpen).onChange(async (v: boolean) => {
+          s.llmAdvancedOpen = v;
+          await this.save();
+          await this.display();
+        })
+      );
+
+    if (s.llmAdvancedOpen) {
+      new Setting(containerEl)
+        .setName("LLM baseUrl")
+        .setDesc("API のエンドポイント URL（プリセット既定を上書き）")
+        .addText((t) =>
+          t.setValue(s.llmBaseUrl).onChange(async (v: string) => {
+            s.llmBaseUrl = v;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("LLM モデル")
+        .setDesc("モデル ID（例: gpt-4o-mini / claude-3-5-sonnet-latest など）")
+        .addText((t) =>
+          t.setValue(s.llmModel).onChange(async (v: string) => {
+            s.llmModel = v;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("LLM API 形式（上書き）")
+        .setDesc("プリセット既定ではなく手動で API 形式を選ぶ")
+        .addToggle((t) =>
+          t
+            .setValue(!s.llmApiFormatOverride)
+            .setTooltip(s.llmApiFormatOverride ? "ON: 手動上書き" : "OFF: プリセット既定を使用")
+            .onChange(async (v: boolean) => {
+              s.llmApiFormatOverride = !v;
+              await this.save();
+              await this.display();
+            })
+        );
+
+      if (s.llmApiFormatOverride) {
+        new Setting(containerEl)
+          .setName("API 形式")
+          .setDesc("OpenAI 互換（/chat/completions）または Anthropic 互換（/v1/messages）")
+          .addDropdown((d) =>
+            d
+              .addOption("openai", "OpenAI 互換（/chat/completions）")
+              .addOption("anthropic", "Anthropic 互換（/v1/messages）")
+              .setValue(s.llmApiFormat)
+              .onChange(async (v: string) => {
+                s.llmApiFormat = v as LlmApiFormat;
+                await this.save();
+              })
+          );
+      }
+
+      new Setting(containerEl)
+        .setName("Anthropic API バージョン")
+        .setDesc("例: 2023-06-01（Anthropic 形式選択時のみ使用）")
+        .addText((t) =>
+          t.setValue(s.anthropicVersion).onChange(async (v: string) => {
+            s.anthropicVersion = v;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("Max tokens")
+        .setDesc(
+          `LLM 出力トークン上限（Anthropic 形式では必須）。プリセット既定: ${
+            LLM_PRESETS[s.llmProvider as keyof typeof LLM_PRESETS]?.defaultMaxTokens ?? 32000
+          }`
+        )
+        .addText((t) =>
+          t.setValue(String(s.llmMaxTokens)).onChange(async (v: string) => {
+            const n = parseInt(v, 10);
+            s.llmMaxTokens = Number.isFinite(n) && n > 0 ? n : 32000;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("⏱️ LLM タイムアウト（ms）")
+        .setDesc("1 試行あたりの上限時間。超えると中断してリトライします（デフォルト: 90000）")
+        .addText((t) =>
+          t.setValue(String(s.llmTimeoutMs)).onChange(async (v: string) => {
+            const n = parseInt(v, 10);
+            s.llmTimeoutMs = Number.isFinite(n) && n > 0 ? n : 90000;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("🔁 LLM リトライ回数")
+        .setDesc("タイムアウト・429・5xx 時に指数バックオフで再試行する回数（デフォルト: 2。0 で無効）")
+        .addText((t) =>
+          t.setValue(String(s.llmMaxRetries)).onChange(async (v: string) => {
+            const n = parseInt(v, 10);
+            s.llmMaxRetries = Number.isFinite(n) && n >= 0 ? n : 2;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("📋 要約自動生成")
+        .setDesc("ON の場合、転写完了後に自動で議事録を生成します（OFF で従来通り）")
+        .addToggle((t) =>
+          t.setValue(s.autoSummarizeEnabled).onChange(async (v: boolean) => {
+            s.autoSummarizeEnabled = v;
+            await this.save();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName("📝 デバッグログ出力")
+        .setDesc("ON で giji-obsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
+        .addToggle((t) =>
+          t.setValue(s.debugLog).onChange(async (v: boolean) => {
+            s.debugLog = v;
+            await this.save();
+          })
+        );
+    }
 
     new Setting(containerEl)
       .setName("議事録テンプレートの場所")

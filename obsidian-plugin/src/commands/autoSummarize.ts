@@ -1,6 +1,7 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
 import { createLlmProvider, LlmCallStats } from "../providers/llm";
+import { isLlmConfigured } from "../providers/llmPresets";
 import { writeDebugLog } from "../util/debugLog";
 import {
   loadMinutesTemplate,
@@ -43,13 +44,7 @@ export interface AutoSummarizeResult {
   skippedReason?: "disabled" | "no-llm-configured";
 }
 
-function isLlmConfigured(s: GijiSettings): boolean {
-  if (s.llmProvider === "claudian") return true; // claudian は検出時に判定
-  if (!s.llmBaseUrl.trim()) return false;
-  if (!s.llmModel.trim()) return false;
-  if (s.llmProvider === "cloud" && !s.llmApiKey) return false;
-  return true;
-}
+// isLlmConfigured は ../providers/llmPresets から import して使用
 
 export async function runAutoSummarize(
   transcript: string,

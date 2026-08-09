@@ -7,9 +7,10 @@ import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
 import { RecordingTimer } from "./ui/recordingTimer";
 import { injectRecordingStyles } from "./ui/recordingStyles";
+import { LLM_PRESETS } from "./providers/llmPresets";
 
 const STT_PROVIDERS = ["openai", "google", "groq"];
-const LLM_PROVIDERS = ["claudian", "cloud", "ollama"];
+const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 
 export default class GijiPlugin extends Plugin {
   settings: GijiSettings = DEFAULT_SETTINGS;

@@ -1,5 +1,6 @@
 import { GijiSettings } from "../settings";
 import { createLlmProvider } from "../providers/llm";
+import { getPreset } from "../providers/llmPresets";
 
 export interface LlmTestResult {
   ok: boolean;
@@ -34,9 +35,11 @@ export async function runLlmTest(
   if (settings.llmProvider === "claudian") {
     return testClaudian(app);
   }
+  const preset = getPreset(settings.llmProvider);
+  if (!preset) return { ok: false, error: `未知の LLM プロバイダ: ${settings.llmProvider}` };
   if (!settings.llmBaseUrl.trim()) return { ok: false, error: "请先填写 LLM baseUrl" };
   if (!settings.llmModel.trim()) return { ok: false, error: "请先填写 LLM 模型" };
-  if (settings.llmProvider === "cloud" && !settings.llmApiKey) {
+  if (preset.requiresApiKey && !settings.llmApiKey) {
     return { ok: false, error: "请先填写 LLM API Key" };
   }
   try {

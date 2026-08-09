@@ -206,6 +206,105 @@ test("claudian llm provider throws (handled by Claudian 連携フロー instead)
   );
 });
 
+test("deepseek preset uses anthropic endpoint with default max_tokens", async () => {
+  let capturedBody: any = null;
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: makeSseBody([
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}\n\n',
+        'data: {"type":"message_delta","usage":{"output_tokens":5}}\n\n',
+        'data: {"type":"message_stop"}\n\n',
+      ]),
+      json: async () => ({}),
+    } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "deepseek",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  // preset.baseUrl / preset.model / preset.defaultMaxTokens が適用される
+  assert.match(capturedBody.model, /deepseek-chat/);
+  assert.equal(capturedBody.max_tokens, 32000);
+});
+
+test("MiniMax preset enforces defaultMaxTokens=524288", async () => {
+  let capturedBody: any = null;
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: makeSseBody([
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}\n\n',
+        'data: {"type":"message_delta","usage":{"output_tokens":5}}\n\n',
+        'data: {"type":"message_stop"}\n\n',
+      ]),
+      json: async () => ({}),
+    } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "MiniMax",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.match(capturedBody.model, /MiniMax-M3/);
+  assert.equal(capturedBody.max_tokens, 524288);
+});
+
+test("kimi preset uses OpenAI 互換エンドポイント", async () => {
+  const calls: any[] = [];
+  const fakeFetch = (async (url: string, init: any) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "OK" } }] }) } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "kimi",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.match(calls[0].url, /api\.moonshot\.cn/);
+  assert.match(calls[0].url, /\/v1\/chat\/completions/);
+});
+
+test("unknown llmProvider throws", () => {
+  assert.throws(
+    () => createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "nonexistent" as any }),
+    /未知の llmProvider/
+  );
+});
+
+function makeSseBody(events: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const e of events) controller.enqueue(encoder.encode(e));
+      controller.close();
+    },
+  });
+}
+
 test("ollama llm uses localhost base", async () => {
   const calls: any[] = [];
   const fakeFetch = (async (url: any) => {
