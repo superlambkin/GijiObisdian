@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSttProvider } from "../providers/stt";
-import { createLlmProvider } from "../providers/llm";
+import { createLlmProvider, resolveLlmTimeoutMs } from "../providers/llm";
+import { getPreset } from "../providers/llmPresets";
 import { DEFAULT_SETTINGS } from "../settings";
 
 const groqSettings = { ...DEFAULT_SETTINGS, sttProvider: "groq" as const, sttApiKey: "key" };
@@ -358,6 +359,22 @@ test("unknown llmProvider throws", () => {
     () => createLlmProvider({ ...DEFAULT_SETTINGS, llmProvider: "nonexistent" as any }),
     /未知の llmProvider/
   );
+});
+
+// 議事録生成失敗の根本原因対策: deepseek-v4-flash は thinking モデルで
+// 思考中にチャンクを送らず、90 秒タイムアウトと競合する。
+// preset の defaultTimeoutMs を最低保証として max() で採用する。
+test("resolveLlmTimeoutMs: deepseek は 300000 を最低保証する（90000 保存済みでも）", () => {
+  const ds = getPreset("deepseek")!;
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 90000 }, ds), 300000);
+  // ユーザーがさらに長く設定していれば尊重
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 600000 }, ds), 600000);
+});
+
+test("resolveLlmTimeoutMs: 通常 preset はユーザー設定値を尊重する", () => {
+  const oai = getPreset("openai")!;
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 90000 }, oai), 90000);
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 150000 }, oai), 150000);
 });
 
 // api.kimi.com 等 CORS 非対応エンドポイント対策:

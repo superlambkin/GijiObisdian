@@ -109,6 +109,12 @@ export interface LlmPresetConfig {
   apiFormat: "openai" | "anthropic";
   anthropicVersion?: string;
   defaultMaxTokens: number;
+  /**
+   * この preset の推奨タイムアウト ms（最低保証）。
+   * thinking モデル（deepseek-v4-flash 等）は思考中に SSE チャンクを送らないため、
+   * デフォルト 90000 ではタイムアウトと競合する。長めの値を設定する。
+   */
+  defaultTimeoutMs?: number;
   requiresApiKey: boolean;
   apiKeyHint?: string;
 }
@@ -136,6 +142,7 @@ export const LLM_PRESETS: Record<LlmPresetId, LlmPresetConfig> = {
     apiFormat: "anthropic",
     anthropicVersion: "2023-06-01",
     defaultMaxTokens: 32000,
+    defaultTimeoutMs: 300000,
     requiresApiKey: true,
     apiKeyHint: "DeepSeek コンソール: https://platform.deepseek.com",
   },
@@ -147,6 +154,7 @@ export const LLM_PRESETS: Record<LlmPresetId, LlmPresetConfig> = {
     apiFormat: "anthropic",
     anthropicVersion: "2023-06-01",
     defaultMaxTokens: 524288,
+    defaultTimeoutMs: 300000,
     requiresApiKey: true,
     apiKeyHint: "MiniMax コンソール: https://platform.MiniMax.io",
   },

@@ -119,6 +119,10 @@ test("getPreset: deepseek のモデルは deepseek-v4-flash", () => {
   assert.equal(getPreset("deepseek")?.model, "deepseek-v4-flash");
 });
 
+test("getPreset: deepseek は thinking モデル用の長いタイムアウト(300000)を持つ", () => {
+  assert.equal(getPreset("deepseek")?.defaultTimeoutMs, 300000);
+});
+
 test("saveProviderProfile: 現在の LLM 設定を provider 別に保存する", () => {
   const s = {
     ...DEFAULT_SETTINGS,

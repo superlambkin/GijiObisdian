@@ -1,5 +1,6 @@
 import { GijiSettings } from "../settings";
 import { getPreset } from "./llmPresets";
+import type { LlmPresetConfig } from "./llmPresets";
 import { createNodeFetch } from "./nodeFetch";
 
 /** LLM 呼び出しの計測結果（complete() の stats 引数に書き戻す） */
@@ -334,6 +335,18 @@ function nonNegativeInt(v: unknown, fallback: number): number {
 }
 
 /**
+ * LLM 1 試行あたりのタイムアウトを解決する。
+ * thinking モデル（deepseek-v4-flash 等）は思考中に SSE チャンクを送らず、
+ * 90000ms タイムアウトと競合して失敗する。そのため preset の defaultTimeoutMs を
+ * 最低保証として max() で採用する（ユーザーがさらに長く設定していれば尊重）。
+ */
+export function resolveLlmTimeoutMs(settings: GijiSettings, preset: LlmPresetConfig): number {
+  const user = positiveInt(settings.llmTimeoutMs, 90000);
+  const presetDefault = preset.defaultTimeoutMs ?? 90000;
+  return Math.max(user, presetDefault);
+}
+
+/**
  * 既定の fetch 実装を解決する。
  * - Obsidian デスクトップ（nodeIntegration あり）: Node http/https 直接接続。
  *   レンダラーの fetch は CORS で api.kimi.com 等に到達できず、Electron net.fetch は
@@ -367,7 +380,7 @@ export function createLlmProvider(
     throw new Error(`未知の llmProvider: ${settings.llmProvider}`);
   }
   const callOpts: CallOptions = {
-    timeoutMs: positiveInt(settings.llmTimeoutMs, 90000),
+    timeoutMs: resolveLlmTimeoutMs(settings, preset),
     maxRetries: nonNegativeInt(settings.llmMaxRetries, 2),
   };
   // ユーザーが空欄にした場合、preset の既定値にフォールバック
