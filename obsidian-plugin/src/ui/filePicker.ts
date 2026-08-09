@@ -24,7 +24,7 @@ export async function importAudioFlow(app: App, settings: GijiSettings, manifest
           template,
           transcript,
           settings.outputDir,
-          new Date().toISOString().slice(0, 10)
+          new Date()
         );
         const ok = await appendToClaudianInput(app, prompt);
         new Notice(
