@@ -33,7 +33,7 @@ export class SegmentRecorder {
     try {
       const ok = await bridgeHealth(settings.bridgeBaseUrl);
       if (!ok) {
-        new Notice("录音桥未启动，请先运行 recorder-bridge");
+        new Notice("⚠️ 録音ブリッジが起動していません。先に recorder-bridge を実行してください");
         return false;
       }
       const outDir = (settings.recordingSaveDir || "").trim() || undefined;
@@ -44,7 +44,7 @@ export class SegmentRecorder {
       return true;
     } catch (err: any) {
       this.sessionId = null;
-      new Notice(`启动录音失败: ${err?.message ?? err}`);
+      new Notice(`⚠️ 録音の開始に失敗しました: ${err?.message ?? err}`);
       throw err;
     }
   }

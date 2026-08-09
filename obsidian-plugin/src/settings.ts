@@ -17,6 +17,7 @@ export interface GijiSettings {
   llmBaseUrl: string;
   llmModel: string;
   llmApiKey: string;
+  autoSummarizeEnabled: boolean;
   outputDir: string;
   keepTranscript: boolean;
   minutesTemplateSource: MinutesTemplateSource;
@@ -48,6 +49,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmModel: "deepseek-chat",
   llmApiKey: "",
+  autoSummarizeEnabled: true,
   outputDir: "Clippings",
   keepTranscript: true,
   minutesTemplateSource: "vault",
@@ -300,6 +302,16 @@ export class GijiSettingsTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(s.llmModel).onChange(async (v: string) => {
           s.llmModel = v;
+          await this.save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("📋 要約自動生成")
+      .setDesc("ON の場合、転写完了後に自動で議事録を生成します（OFF で従来通り）")
+      .addToggle((t) =>
+        t.setValue(s.autoSummarizeEnabled).onChange(async (v: boolean) => {
+          s.autoSummarizeEnabled = v;
           await this.save();
         })
       );

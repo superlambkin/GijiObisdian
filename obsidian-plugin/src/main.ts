@@ -28,7 +28,7 @@ export default class GijiPlugin extends Plugin {
     this.addCommand({
       id: "record-stop",
       name: "停止并转写（追加到笔记）",
-      callback: () => stopSegment(this.app, this.settings),
+      callback: () => stopSegment(this.app, this.settings, this.manifest.dir),
     });
     this.addCommand({
       id: "import-audio",
@@ -38,7 +38,11 @@ export default class GijiPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings = Object.assign(
+      { autoSummarizeEnabled: true },
+      DEFAULT_SETTINGS,
+      await this.loadData()
+    );
     // 廃止・未対応プロバイダー値のマイグレーション（例: doubao / 旧デフォルト groq）
     if (!STT_PROVIDERS.includes(this.settings.sttProvider)) {
       this.settings.sttProvider = "openai";
