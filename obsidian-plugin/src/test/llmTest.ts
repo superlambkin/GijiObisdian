@@ -44,7 +44,15 @@ export async function runLlmTest(
     const text = await llm.complete("", "连接测试：请只回复「OK」");
     if (!text.trim()) return { ok: false, error: "请求成功但未返回文本" };
     return { ok: true, text: text.trim().slice(0, 30) };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
+  } catch (e: any) {
+    // === UAT 失敗診断用：詳細スタックトレースを返す ===
+    const parts: string[] = [];
+    parts.push(`name=${e?.name ?? "?"}`);
+    parts.push(`msg=${e?.message ?? String(e)}`);
+    if (e?.code) parts.push(`code=${e.code}`);
+    if (e?.cause) parts.push(`cause=${e.cause?.message ?? String(e.cause)}`);
+    const stack = e?.stack?.split("\n").slice(0, 5).join(" | ") ?? "";
+    if (stack) parts.push(`stack=${stack}`);
+    return { ok: false, error: parts.join("\n") };
   }
 }
