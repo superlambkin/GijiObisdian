@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { DEFAULT_SETTINGS, GijiSettings } from "../settings";
+import { buildMp3Links } from "./mp3Ref";
 
 const pad = (n: number) => n.toString().padStart(2, "0");
 
@@ -70,7 +71,8 @@ export function renderTranscriptNote(
   now: Date,
   text: string,
   durationSec?: number,
-  notePath?: string
+  notePath?: string,
+  mp3Links?: string
 ): string {
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const timeHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -102,6 +104,7 @@ export function renderTranscriptNote(
     `| 📝 文字数 | ${charCount} 字 |`,
     `| ⏱️ 会議時間 | ${duration} |`,
     `| 🕐 録音日時 | ${date} ${timeHM} |`,
+    ...(mp3Links ? [`| 🎙️ 録音ファイル | ${mp3Links} |`, ""] : []),
     "",
     "## 📝 転写本文",
     "",
@@ -218,7 +221,8 @@ export async function saveTranscriptToFile(
   settings: GijiSettings,
   text: string,
   durationSec?: number,
-  now: Date = new Date()
+  now: Date = new Date(),
+  mp3Links?: string
 ): Promise<{ path: string; appended: boolean }> {
   const dir = (settings.transcriptSaveDir || "").trim().replace(/^\/+|\/+$/g, "") || "議事録";
   const vault = app.vault as any;
@@ -229,7 +233,8 @@ export async function saveTranscriptToFile(
     await vault.createFolder(dir);
   }
 
-  const template = (settings.fileNameTemplate || "").trim() || DEFAULT_SETTINGS.fileNameTemplate;
+  const template =
+    (settings.transcriptFileNameTemplate || "").trim() || DEFAULT_SETTINGS.transcriptFileNameTemplate;
   const filename = buildTranscriptFilename(now, template);
   const basePath = `${dir}/${filename}.md`;
 
@@ -253,7 +258,7 @@ export async function saveTranscriptToFile(
     counter++;
   }
 
-  const content = renderTranscriptNote(filename, now, text, durationSec, path);
+  const content = renderTranscriptNote(filename, now, text, durationSec, path, mp3Links);
   await vault.create(path, content);
   return { path, appended: false };
 }
