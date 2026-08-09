@@ -244,8 +244,11 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
           timer?.stop(); // 全処理完了で非表示
         }
 
-        // 設定「結果を Claudian 入力欄に挿入」が OFF の場合は挿入しない
-        if (settings.insertToClaudianEnabled) {
+        // 設定「結果を Claudian 入力欄に挿入」が OFF の場合は挿入しない。
+        // claudian + 自動要約ON 時は要約プロンプトに転写全文が含まれるため重複挿入を避ける。
+        const skipRawInsert =
+          settings.llmProvider === "claudian" && settings.autoSummarizeEnabled;
+        if (settings.insertToClaudianEnabled && !skipRawInsert) {
           // 内部 API 優先（realclaudian 自身が入力欄を解決するため頑健）。
           // 失敗時のみ DOM セレクタ方式へフォールバック。
           const inserted = await appendToClaudianInput(plugin.app, text);

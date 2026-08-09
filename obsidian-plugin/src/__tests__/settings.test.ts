@@ -14,6 +14,8 @@ test("DEFAULT_SETTINGS has required fields", () => {
     DEFAULT_SETTINGS.transcriptFileNameTemplate,
     "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分"
   );
+  assert.ok(DEFAULT_SETTINGS.fileNameTemplate.startsWith("議事録_"));
+  assert.ok(DEFAULT_SETTINGS.transcriptFileNameTemplate.startsWith("録音_"));
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {

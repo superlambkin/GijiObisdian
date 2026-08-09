@@ -315,8 +315,8 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("転写ファイル名テンプレート")
-      .setDesc("転写 MD のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
+      .setName("議事録ファイル名テンプレート")
+      .setDesc("議事録 MD のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
       .addText((t) =>
         t.setValue(s.fileNameTemplate).onChange(async (v: string) => {
           s.fileNameTemplate = v;
