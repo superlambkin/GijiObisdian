@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { basename } from "path";
 import { DirectRecorder, DirectRecorderDeps } from "../audio/directRecorder";
+import { buildRecordingFileName } from "../audio/recorder";
 import { GijiSettings } from "../settings";
 
 // ---- Fake MediaRecorder（DOM 非依存・テスト用）----
@@ -104,10 +105,12 @@ test("stop: ファイル名は録音開始時刻（startTime）で生成され�
   assert.ok(result, "stop は null でない");
   assert.ok(result!.startTime instanceof Date);
   assert.ok(result!.startTime!.getTime() >= before);
-  // ファイル名の分・秒は開始時刻（新しい分に進んでいない）
+  // ファイル名は録音開始時刻（startTime）をテンプレートで描画したものと完全一致する
+  // （開始→停止の間に 30ms 以上空いているため、停止時刻で名付ける実装に退行したら検出できる）
   const name = basename(result!.audioPaths[0]);
-  const startMin = result!.startTime!.getMinutes();
-  assert.match(name, /録音_/);
+  const expected =
+    buildRecordingFileName(result!.startTime!, settings.recordingFileNameTemplate) + ".mp3";
+  assert.equal(name, expected);
 });
 
 test("stop: ffmpeg 失敗 → warning=mp3_encode_failed・webm 残存", async () => {
