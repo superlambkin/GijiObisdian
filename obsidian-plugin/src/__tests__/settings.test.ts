@@ -34,6 +34,13 @@ test("DEFAULT_SETTINGS has new feature flags", () => {
   assert.equal(DEFAULT_SETTINGS.emailSummaryEnabled, false);
 });
 
+test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
+  assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
+  assert.equal(DEFAULT_SETTINGS.llmMaxTokens, 32000);
+  assert.equal(DEFAULT_SETTINGS.llmAdvancedOpen, false);
+  assert.equal(DEFAULT_SETTINGS.llmApiFormatOverride, false);
+});
+
 test("isBridgeSettingDisabled", () => {
   assert.equal(isBridgeSettingDisabled("bridge"), false);
   assert.equal(isBridgeSettingDisabled("direct"), true);

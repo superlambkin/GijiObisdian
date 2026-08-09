@@ -259,12 +259,34 @@ test("MiniMax preset enforces defaultMaxTokens=524288", async () => {
       llmApiKey: "k",
       llmBaseUrl: "",
       llmModel: "",
+      llmMaxTokens: 524288,
     },
     fakeFetch
   );
   await llm.complete("s", "u");
   assert.match(capturedBody.model, /MiniMax-M3/);
   assert.equal(capturedBody.max_tokens, 524288);
+});
+
+test("MiniMax preset respects an explicit max_tokens override of 32000", async () => {
+  let capturedBody: any = null;
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return { ok: true, json: async () => ({ content: [{ text: "OK" }] }) } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "MiniMax",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+      llmMaxTokens: 32000,
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.equal(capturedBody.max_tokens, 32000);
 });
 
 test("kimi preset uses OpenAI 互換エンドポイント", async () => {

@@ -364,9 +364,8 @@ export function createLlmProvider(
         ? settings.llmApiFormat
         : preset.apiFormat;
   if (apiFormat === "anthropic") {
-    // llmMaxTokens が DEFAULT_SETTINGS の初期値（32000）のままなら preset 既定値を使う
-    const effectiveMaxTokens =
-      settings.llmMaxTokens === 32000 ? preset.defaultMaxTokens : positiveInt(settings.llmMaxTokens, preset.defaultMaxTokens);
+    // settings.llmMaxTokens が 0/undefined/NaN なら preset 既定値、それ以外はユーザー設定をそのまま尊重
+    const effectiveMaxTokens = positiveInt(settings.llmMaxTokens, preset.defaultMaxTokens);
     return new AnthropicLlm(
       preset.id,
       baseUrl,

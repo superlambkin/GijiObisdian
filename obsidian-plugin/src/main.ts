@@ -10,7 +10,7 @@ import { injectRecordingStyles } from "./ui/recordingStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
 
 const STT_PROVIDERS = ["openai", "google", "groq"];
-const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
+export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 
 export default class GijiPlugin extends Plugin {
   settings: GijiSettings = DEFAULT_SETTINGS;

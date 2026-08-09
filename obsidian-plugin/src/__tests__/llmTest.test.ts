@@ -96,6 +96,18 @@ test("ollama: empty api key is allowed (no key required)", async () => {
   assert.equal(res.text, "pong");
 });
 
+test("MiniMax: empty api key returns hint", async () => {
+  const res = await runLlmTest({
+    ...DEFAULT_SETTINGS,
+    llmProvider: "MiniMax",
+    llmBaseUrl: "https://api.minimaxi.com/anthropic",
+    llmModel: "MiniMax-M3[1M]",
+    llmApiKey: "",
+  });
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /请先填写 LLM API Key/);
+});
+
 test("claudian: realclaudian plugin with full api is detected ok", async () => {
   const fakeApp = {
     plugins: {

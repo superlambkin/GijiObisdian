@@ -64,6 +64,18 @@ test("applyPreset: MiniMax は llmMaxTokens === 524288 を設定", () => {
   assert.equal(out.llmModel, "MiniMax-M3[1M]");
 });
 
+test("getPreset: OpenAI / Claude / Gemini は各 API 形式と URL を持つ", () => {
+  assert.equal(getPreset("openai")?.apiFormat, "openai");
+  assert.equal(getPreset("openai")?.baseUrl, "https://api.openai.com/v1");
+  assert.equal(getPreset("claude")?.apiFormat, "anthropic");
+  assert.equal(getPreset("claude")?.baseUrl, "https://api.anthropic.com");
+  assert.equal(getPreset("gemini")?.apiFormat, "openai");
+  assert.equal(
+    getPreset("gemini")?.baseUrl,
+    "https://generativelanguage.googleapis.com/v1beta/openai"
+  );
+});
+
 test("applyPreset: custom はユーザーが既に設定した baseUrl / model を上書きしない", () => {
   const settings = {
     ...DEFAULT_SETTINGS,
