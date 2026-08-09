@@ -7,6 +7,10 @@ export type SttProviderId = "openai" | "google" | "groq";
 import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
 export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
+/** STT provider 別に保存する設定（API キーを provider 間で共有しない） */
+export interface SttProviderProfile {
+  sttApiKey?: string;
+}
 /** provider 別に保存する LLM 設定（API キー・モデル名・URL などを共有しない） */
 export interface LlmProviderProfile {
   llmApiKey?: string;
@@ -28,6 +32,8 @@ export interface GijiSettings {
   sttProvider: SttProviderId;
   sttApiKey: string;
   sttLang: SttLang;
+  /** STT provider 別に保存した API キープロファイル */
+  sttProviderProfiles?: Record<string, SttProviderProfile>;
   // ③ 要約
   llmProvider: LlmProviderId;
   llmBaseUrl: string;
@@ -84,6 +90,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "openai",
   sttApiKey: "",
   sttLang: "auto",
+  sttProviderProfiles: {},
   llmProvider: "claudian",
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmModel: "deepseek-v4-flash",
@@ -129,6 +136,7 @@ import {
   switchLlmProvider,
   saveProviderProfile,
 } from "./providers/llmPresets";
+import { switchSttProvider, saveSttProviderProfile } from "./providers/sttProfiles";
 
 /** 設定画面のタブ ID */
 export type SettingsTabId = "recording" | "transcript" | "summary" | "other";
@@ -166,6 +174,22 @@ export class GijiSettingsTab extends PluginSettingTab {
       Object.assign(s, saveProviderProfile(s, s.llmProvider));
       await this.save();
       new Notice(`✅ 接続成功: ${res.text}`);
+    } else {
+      new Notice(`❌ テスト失敗: ${res.error}`);
+    }
+  }
+
+  /**
+   * STT 接続テストを実行し、成功時はこの provider の API キーを
+   * provider 別プロファイルに保存してから永続化する。
+   */
+  async handleSttTest(): Promise<void> {
+    const s = this.plugin.settings as GijiSettings;
+    const res = await runSttTest(s);
+    if (res.ok) {
+      Object.assign(s, saveSttProviderProfile(s, s.sttProvider));
+      await this.save();
+      new Notice(`✅ 文字起こし成功: ${res.text}`);
     } else {
       new Notice(`❌ テスト失敗: ${res.error}`);
     }
@@ -347,14 +371,16 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(content)
       .setName("STT プロバイダー")
+      .setDesc("切り替えると、接続テスト成功時に保存した provider 別 API キーを自動反映します")
       .addDropdown((d) =>
         d.addOption("openai", "OpenAI（デフォルト）")
           .addOption("google", "Google")
           .addOption("groq", "Groq")
           .setValue(s.sttProvider)
           .onChange(async (v: string) => {
-            s.sttProvider = v as SttProviderId;
+            Object.assign(s, switchSttProvider(s, v as SttProviderId));
             await this.save();
+            await this.display();
           })
       );
 
@@ -388,9 +414,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         btn.setButtonText("テスト開始").onClick(async () => {
           btn.setDisabled(true).setButtonText("テスト中…");
           try {
-            const res = await runSttTest(s);
-            if (res.ok) new Notice(`✅ 文字起こし成功: ${res.text}`);
-            else new Notice(`❌ テスト失敗: ${res.error}`);
+            await this.handleSttTest();
           } finally {
             btn.setDisabled(false).setButtonText("テスト開始");
           }
