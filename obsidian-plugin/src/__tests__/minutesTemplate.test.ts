@@ -7,6 +7,7 @@ import {
   extractTemplateBody,
   loadMinutesTemplate,
   DEFAULT_TEMPLATE_FILE_NAME,
+  DEFAULT_MINUTES_TEMPLATE_MD,
 } from "../notes/minutesTemplate";
 import { DEFAULT_SETTINGS } from "../settings";
 
@@ -75,12 +76,22 @@ test("loadMinutesTemplate throws explicitly when missing", async () => {
 
 /* ---------------- プロンプト組み立て ---------------- */
 
-test("buildClaudianMinutesPrompt embeds template, transcript and save path", () => {
-  const p = buildClaudianMinutesPrompt("TPL", "転写テキストです", "Clippings", "2026-08-09");
+test("buildClaudianMinutesPrompt embeds template, transcript, startTime and 録音情報", () => {
+  const start = new Date(2026, 7, 9, 13, 51);
+  const p = buildClaudianMinutesPrompt("TPL", "転写テキストです", "Clippings", start, {
+    durationSec: 83,
+    mp3Links: "[🎙️ 録音を再生](file:///C:/a.mp3)",
+  });
   assert.match(p, /TPL/);
   assert.match(p, /転写テキストです/);
-  assert.match(p, /Clippings\/議事録_<テーマ>_2026-08-09\.md/);
-  assert.match(p, /空欄/);
+  assert.match(p, /議事録_2026年08月09日13時51分\.md/);
+  assert.match(p, /開始時間=2026-08-09 13:51/);
+  assert.match(p, /会議時間=1 分 23 秒/);
+  assert.match(p, /録音ファイル=\[🎙️ 録音を再生\]/);
+});
+
+test("DEFAULT_MINUTES_TEMPLATE_MD includes 録音ファイル row", () => {
+  assert.match(DEFAULT_MINUTES_TEMPLATE_MD, /\| 🎙️ 録音ファイル \|/);
 });
 
 test("buildTemplateSystemPrompt embeds template", () => {

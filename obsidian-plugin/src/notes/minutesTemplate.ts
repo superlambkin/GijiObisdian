@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { GijiSettings } from "../settings";
+import { formatStartTime } from "./minutesMetadata";
 
 /**
  * 議事録テンプレートの読み込み・初期化。
@@ -42,6 +43,7 @@ applied_rules_version: 2.11.0
 | 🔢 議事録番号 |  |
 | 🕐 開始時間 | YYYY-MM-DD HH:MM |
 | ⏱️ 会議時間 | X 分 Y 秒（追加録音がある場合は合計時間） |
+| 🎙️ 録音ファイル |  |
 | テーマ |  |
 | 形式 |  |
 | 目的 |  |
@@ -150,13 +152,18 @@ export function buildClaudianMinutesPrompt(
   template: string,
   transcript: string,
   outputDir: string,
-  date: string
+  startTime: Date,
+  meta: { durationSec?: number; mp3Links?: string } = {}
 ): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const ts = `${startTime.getFullYear()}年${pad(startTime.getMonth() + 1)}月${pad(startTime.getDate())}日${pad(startTime.getHours())}時${pad(startTime.getMinutes())}分`;
+  const duration = meta.durationSec !== undefined ? `${Math.floor(meta.durationSec / 60)} 分 ${meta.durationSec % 60} 秒` : "不明";
   return [
     "以下の会議転写テキストを、議事録テンプレートに従って議事録 Markdown として作成し、Vault に保存してください。",
     "",
-    `【保存先】${outputDir}/議事録_<テーマ>_${date}.md`,
+    `【保存先】${outputDir}/議事録_${ts}.md`,
     "【ルール】不明な項目は空欄にしてください。テンプレートの構成を厳密に守ってください。",
+    `【録音情報】開始時間=${formatStartTime(startTime)} / 会議時間=${duration} / 録音ファイル=${meta.mp3Links ?? ""}`,
     "",
     "【議事録テンプレート】",
     template,
