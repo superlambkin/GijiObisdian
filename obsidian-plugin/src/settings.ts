@@ -122,6 +122,21 @@ export class GijiSettingsTab extends PluginSettingTab {
     await this.plugin.saveSettings();
   }
 
+  /**
+   * LLM 接続テストを実行し、成功時は設定（対応 LLM の API キー含む）を永続化する。
+   * 入力欄の onChange 保存に依存せず、テスト成功を保存の確実な契機とする。
+   */
+  async handleLlmTest(): Promise<void> {
+    const s = this.plugin.settings as GijiSettings;
+    const res = await runLlmTest(s, this.app);
+    if (res.ok) {
+      await this.save();
+      new Notice(`✅ 接続成功: ${res.text}`);
+    } else {
+      new Notice(`❌ テスト失敗: ${res.error}`);
+    }
+  }
+
   async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
@@ -405,9 +420,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         btn.setButtonText("テスト開始").onClick(async () => {
           btn.setDisabled(true).setButtonText("テスト中…");
           try {
-            const res = await runLlmTest(s, this.app);
-            if (res.ok) new Notice(`✅ 接続成功: ${res.text}`);
-            else new Notice(`❌ テスト失敗: ${res.error}`);
+            await this.handleLlmTest();
           } finally {
             btn.setDisabled(false).setButtonText("テスト開始");
           }

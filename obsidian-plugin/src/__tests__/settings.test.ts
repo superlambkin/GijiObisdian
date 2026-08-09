@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, isBridgeSettingDisabled } from "../settings";
+import { DEFAULT_SETTINGS, GijiSettingsTab, isBridgeSettingDisabled } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttProvider, "openai");
@@ -44,4 +44,65 @@ test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
 test("isBridgeSettingDisabled", () => {
   assert.equal(isBridgeSettingDisabled("bridge"), false);
   assert.equal(isBridgeSettingDisabled("direct"), true);
+});
+
+// ユーザー要求: 「テスト成功した場合、対応LLMのAPIキーを保存する」
+// 接続テスト成功時は saveSettings が呼ばれる（API キーを含む設定が永続化される）
+test("LLM 接続テスト成功時に saveSettings が呼ばれる（API キー保存）", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "OK" } }] }),
+  })) as any;
+  try {
+    let saved = 0;
+    const plugin = {
+      manifest: { version: "0.0.0" },
+      settings: {
+        ...DEFAULT_SETTINGS,
+        llmProvider: "cloud" as const,
+        llmBaseUrl: "https://api.example.com/v1",
+        llmModel: "test-model",
+        llmApiKey: "test-key",
+      },
+      saveSettings: async () => {
+        saved++;
+      },
+    };
+    const tab = new GijiSettingsTab({} as any, plugin as any);
+    await tab.handleLlmTest();
+    assert.equal(saved, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("LLM 接続テスト失敗時は saveSettings が呼ばれない", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({
+    ok: false,
+    status: 401,
+    text: async () => "bad key",
+  })) as any;
+  try {
+    let saved = 0;
+    const plugin = {
+      manifest: { version: "0.0.0" },
+      settings: {
+        ...DEFAULT_SETTINGS,
+        llmProvider: "cloud" as const,
+        llmBaseUrl: "https://api.example.com/v1",
+        llmModel: "test-model",
+        llmApiKey: "bad",
+      },
+      saveSettings: async () => {
+        saved++;
+      },
+    };
+    const tab = new GijiSettingsTab({} as any, plugin as any);
+    await tab.handleLlmTest();
+    assert.equal(saved, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
