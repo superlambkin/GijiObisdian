@@ -1,4 +1,78 @@
-import { GijiSettings } from "../settings";
+import { GijiSettings, LlmApiFormat } from "../settings";
+
+/**
+ * provider 別に保存する LLM 設定プロファイル。
+ * 接続テスト成功時・プリセット切替時に saveProviderProfile / switchLlmProvider で
+ * 記録し、同じ provider に戻したときに読み出す（API キー・モデル名・URL を共有しない）。
+ */
+export interface LlmProviderProfile {
+  llmApiKey?: string;
+  llmBaseUrl?: string;
+  llmModel?: string;
+  llmApiFormat?: LlmApiFormat;
+  anthropicVersion?: string;
+  llmMaxTokens?: number;
+  llmTimeoutMs?: number;
+  llmMaxRetries?: number;
+  llmApiFormatOverride?: boolean;
+}
+
+/** 現在の LLM 関連設定を providerId のプロファイルとして保存した新しい settings を返す */
+export function saveProviderProfile(settings: GijiSettings, providerId: string): GijiSettings {
+  const profile: LlmProviderProfile = {
+    llmApiKey: settings.llmApiKey,
+    llmBaseUrl: settings.llmBaseUrl,
+    llmModel: settings.llmModel,
+    llmApiFormat: settings.llmApiFormat,
+    anthropicVersion: settings.anthropicVersion,
+    llmMaxTokens: settings.llmMaxTokens,
+    llmTimeoutMs: settings.llmTimeoutMs,
+    llmMaxRetries: settings.llmMaxRetries,
+    llmApiFormatOverride: settings.llmApiFormatOverride,
+  };
+  return {
+    ...settings,
+    llmProviderProfiles: {
+      ...(settings.llmProviderProfiles ?? {}),
+      [providerId]: profile,
+    },
+  };
+}
+
+/** providerId の保存済みプロファイルを現在の設定に反映した新しい settings を返す（無ければ無変更） */
+export function loadProviderProfile(settings: GijiSettings, providerId: string): GijiSettings {
+  const profile = settings.llmProviderProfiles?.[providerId];
+  if (!profile) return settings;
+  return {
+    ...settings,
+    ...(profile.llmApiKey !== undefined ? { llmApiKey: profile.llmApiKey } : {}),
+    ...(profile.llmBaseUrl !== undefined ? { llmBaseUrl: profile.llmBaseUrl } : {}),
+    ...(profile.llmModel !== undefined ? { llmModel: profile.llmModel } : {}),
+    ...(profile.llmApiFormat !== undefined ? { llmApiFormat: profile.llmApiFormat } : {}),
+    ...(profile.anthropicVersion !== undefined ? { anthropicVersion: profile.anthropicVersion } : {}),
+    ...(profile.llmMaxTokens !== undefined ? { llmMaxTokens: profile.llmMaxTokens } : {}),
+    ...(profile.llmTimeoutMs !== undefined ? { llmTimeoutMs: profile.llmTimeoutMs } : {}),
+    ...(profile.llmMaxRetries !== undefined ? { llmMaxRetries: profile.llmMaxRetries } : {}),
+    ...(profile.llmApiFormatOverride !== undefined ? { llmApiFormatOverride: profile.llmApiFormatOverride } : {}),
+  };
+}
+
+/**
+ * プリセット切替ヘルパ:
+ * 1. 旧 provider の現在設定をプロファイルに保存
+ * 2. 新 provider のプリセット既定を適用
+ * 3. 新 provider の保存済みプロファイルを読み出す
+ * 4. 保存済みプロファイルが無ければ API キーを引き継がない（旧 provider のキー残留を防ぐ）
+ */
+export function switchLlmProvider(settings: GijiSettings, newProviderId: LlmPresetId): GijiSettings {
+  let next = saveProviderProfile(settings, settings.llmProvider);
+  next = applyPreset(next, newProviderId);
+  next = loadProviderProfile(next, newProviderId);
+  if (!next.llmProviderProfiles?.[newProviderId]) {
+    next = { ...next, llmApiKey: "" };
+  }
+  return next;
+}
 
 /**
  * LLM プロバイダ・プリセット ID。
@@ -58,7 +132,7 @@ export const LLM_PRESETS: Record<LlmPresetId, LlmPresetConfig> = {
     id: "deepseek",
     displayName: "DeepSeek（Anthropic 互換）",
     baseUrl: "https://api.deepseek.com/anthropic",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     apiFormat: "anthropic",
     anthropicVersion: "2023-06-01",
     defaultMaxTokens: 32000,

@@ -7,6 +7,18 @@ export type SttProviderId = "openai" | "google" | "groq";
 import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
 export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
+/** provider 別に保存する LLM 設定（API キー・モデル名・URL などを共有しない） */
+export interface LlmProviderProfile {
+  llmApiKey?: string;
+  llmBaseUrl?: string;
+  llmModel?: string;
+  llmApiFormat?: LlmApiFormat;
+  anthropicVersion?: string;
+  llmMaxTokens?: number;
+  llmTimeoutMs?: number;
+  llmMaxRetries?: number;
+  llmApiFormatOverride?: boolean;
+}
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
 export type RecordingMethodId = "bridge" | "direct";
@@ -32,6 +44,8 @@ export interface GijiSettings {
   llmAdvancedOpen: boolean;
   /** API 形式を preset ではなく手動で上書きする */
   llmApiFormatOverride: boolean;
+  /** provider 別に保存した LLM 設定プロファイル（API キー・モデル名・URL などを共有しない） */
+  llmProviderProfiles?: Record<string, LlmProviderProfile>;
   /** 性能調査用デバッグログ（logs/giji-YYYY-MM-DD.log）を出力する */
   debugLog: boolean;
   autoSummarizeEnabled: boolean;
@@ -72,7 +86,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttLang: "auto",
   llmProvider: "claudian",
   llmBaseUrl: "https://api.deepseek.com/v1",
-  llmModel: "deepseek-chat",
+  llmModel: "deepseek-v4-flash",
   llmApiKey: "",
   llmApiFormat: "openai",
   anthropicVersion: "2023-06-01",
@@ -81,6 +95,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmMaxRetries: 2,
   llmAdvancedOpen: false,
   llmApiFormatOverride: false,
+  llmProviderProfiles: {},
   debugLog: true,
   autoSummarizeEnabled: true,
   outputDir: "議事録",
@@ -111,6 +126,8 @@ import {
   LLM_PRESETS,
   applyPreset,
   PRESET_DISPLAY_ORDER,
+  switchLlmProvider,
+  saveProviderProfile,
 } from "./providers/llmPresets";
 
 export class GijiSettingsTab extends PluginSettingTab {
@@ -130,6 +147,9 @@ export class GijiSettingsTab extends PluginSettingTab {
     const s = this.plugin.settings as GijiSettings;
     const res = await runLlmTest(s, this.app);
     if (res.ok) {
+      // テスト成功時、この provider の設定（API キー・モデル名・URL など）を
+      // provider 別プロファイルに保存してから永続化する
+      Object.assign(s, saveProviderProfile(s, s.llmProvider));
       await this.save();
       new Notice(`✅ 接続成功: ${res.text}`);
     } else {
@@ -394,7 +414,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           d.addOption(id, LLM_PRESETS[id].displayName);
         }
         return d.setValue(s.llmProvider).onChange(async (v: string) => {
-          Object.assign(s, applyPreset(s, v as LlmPresetId));
+          Object.assign(s, switchLlmProvider(s, v as LlmPresetId));
           await this.save();
           await this.display();
         });

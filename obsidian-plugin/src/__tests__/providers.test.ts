@@ -233,7 +233,7 @@ test("deepseek preset uses anthropic endpoint with default max_tokens", async ()
   );
   await llm.complete("s", "u");
   // preset.baseUrl / preset.model / preset.defaultMaxTokens が適用される
-  assert.match(capturedBody.model, /deepseek-chat/);
+  assert.match(capturedBody.model, /deepseek-v4-flash/);
   assert.equal(capturedBody.max_tokens, 32000);
 });
 

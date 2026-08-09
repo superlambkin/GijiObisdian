@@ -72,6 +72,8 @@ test("LLM 接続テスト成功時に saveSettings が呼ばれる（API キー�
     const tab = new GijiSettingsTab({} as any, plugin as any);
     await tab.handleLlmTest();
     assert.equal(saved, 1);
+    // 成功時は provider 別プロファイルにも保存される
+    assert.equal((plugin.settings.llmProviderProfiles as any)?.cloud?.llmApiKey, "test-key");
   } finally {
     globalThis.fetch = originalFetch;
   }
