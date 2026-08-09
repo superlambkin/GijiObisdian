@@ -6,6 +6,7 @@ export type SttLang = "auto" | "zh" | "ja" | "en";
 export type SttProviderId = "openai" | "google" | "groq";
 export type LlmProviderId = "claudian" | "cloud" | "ollama";
 export type MinutesTemplateSource = "vault" | "directory";
+export type AudioSourceId = "mic" | "pcLoopback" | "mix";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -28,6 +29,7 @@ export interface GijiSettings {
   bridgeDir: string;
   recordingSaveDir: string;
   recordingFileNameTemplate: string;
+  audioSource: AudioSourceId;
   appendRecordEnabled: boolean;
   // ② 文字起こし（保存・挿入）
   autoSaveTranscript: boolean;
@@ -59,6 +61,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   bridgeDir: "D:\\AI-Agent\\giji-obsidian\\recorder-bridge",
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
+  audioSource: "mix",
   appendRecordEnabled: true,
   autoSaveTranscript: true,
   transcriptSaveDir: "Clippings",
@@ -97,6 +100,21 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setName("① 🎙️ 録音")
       .setDesc("マイク → ローカル録音ブリッジ（Python FastAPI）で WAV を録音します")
       .setHeading();
+
+    new Setting(containerEl)
+      .setName("🎙️ 録音モード")
+      .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ）")
+      .addDropdown((d) =>
+        d
+          .addOption("mix", "マイク + PC 音声（WASAPI ループバック）")
+          .addOption("mic", "マイクのみ（従来）")
+          .addOption("pcLoopback", "PC 音声のみ（ループバック）")
+          .setValue(s.audioSource ?? "mix")
+          .onChange(async (v: string) => {
+            s.audioSource = v as AudioSourceId;
+            await this.save();
+          })
+      );
 
     new Setting(containerEl)
       .setName("ブリッジ URL")

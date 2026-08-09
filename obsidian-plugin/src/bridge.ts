@@ -12,6 +12,8 @@ export interface BridgeStartOptions {
   outDir?: string;
   /** 録音ファイル名（拡張子 .wav はブリッジ側で付与）。省略時は giji_<sessionId> */
   fileName?: string;
+  /** 録音モード: mic（マイクのみ）/ pcLoopback（PC 音声のみ）/ mix（マイク+PC 音声）。省略時はブリッジ既定 "mic" */
+  audioSource?: string;
 }
 
 export async function bridgeStart(
@@ -22,7 +24,7 @@ export async function bridgeStart(
   const res = await fetchImpl(`${baseUrl}/record/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format: "wav", outDir: opts.outDir, fileName: opts.fileName }),
+    body: JSON.stringify({ format: "wav", outDir: opts.outDir, fileName: opts.fileName, audioSource: opts.audioSource }),
   });
   if (!res.ok) throw new Error(`bridge start ${res.status}`);
   const data = await res.json();
@@ -35,6 +37,8 @@ export interface BridgeStopResult {
   durationSec: number;
   /** 後方互換: 先頭ファイルのパス */
   wavPath?: string;
+  /** 実際に使用された録音モード（mic / pcLoopback / mix） */
+  audioSource?: string;
   /** "mp3_encode_failed": MP3 変換失敗で WAV フォールバック */
   warning?: string;
 }

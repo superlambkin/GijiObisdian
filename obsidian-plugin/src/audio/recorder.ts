@@ -40,7 +40,7 @@ export class SegmentRecorder {
       const fileName = (settings.recordingFileNameTemplate || "").trim()
         ? buildRecordingFileName(new Date(), settings.recordingFileNameTemplate)
         : undefined;
-      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, { outDir, fileName });
+      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, { outDir, fileName, audioSource: settings.audioSource });
       return true;
     } catch (err: any) {
       this.sessionId = null;
