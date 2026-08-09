@@ -41,6 +41,8 @@ export interface BridgeStopResult {
   wavPath?: string;
   /** 実際に使用された録音モード（mic / pcLoopback / mix） */
   audioSource?: string;
+  /** 録音中にデバイスエラーがあった場合 {ソース名: エラーメッセージ}（デバッグ用） */
+  captureErrors?: Record<string, string>;
   /** "mp3_encode_failed": MP3 変換失敗で WAV フォールバック */
   warning?: string;
 }

@@ -112,11 +112,13 @@ class Recorder:
         """録音セッションの状態を初期値に戻す（lock 保持下で呼ぶこと）"""
         self._threads = []
         self._sources = []
+        self._frames = {"mic": [], "pc": []}
         self._session_id = None
         self._out_dir_override = None
         self._file_name = None
         self._audio_source = AudioSource.MIC
         self._capture_errors = {}
+        self._stop_event.clear()
 
     def _record_loop(self, source_obj, name: str) -> None:
         """Blocking recording loop — runs in its own thread.
