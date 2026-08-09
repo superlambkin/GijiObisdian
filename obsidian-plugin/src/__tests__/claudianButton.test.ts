@@ -19,12 +19,34 @@ test("saveTranscriptAndAutoSummarize calls autoSummarize with text/settings/app/
   };
   const plugin = { app: {}, manifest: { dir: "/manifest/dir" } } as any;
   const settings = { ...DEFAULT_SETTINGS, autoSaveTranscript: false, autoSummarizeEnabled: true };
-  await saveTranscriptAndAutoSummarize(plugin, settings, "転写テキスト", 12, spy);
+  await saveTranscriptAndAutoSummarize(plugin, settings, "転写テキスト", 12, { autoSummarizeImpl: spy });
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "転写テキスト"); // text
   assert.equal(calls[0][1], settings); // settings
   assert.equal(calls[0][2], plugin.app); // app
   assert.equal(calls[0][3], "/manifest/dir"); // manifestDir
+});
+
+test("saveTranscriptAndAutoSummarize passes startTime/audioPaths to autoSummarize", async () => {
+  const calls: any[] = [];
+  const spy: any = async (...args: any[]) => {
+    calls.push(args);
+    return { ok: true };
+  };
+  const plugin = { app: {}, manifest: { dir: "/manifest/dir" } } as any;
+  const settings = { ...DEFAULT_SETTINGS, autoSaveTranscript: false, autoSummarizeEnabled: true };
+  const start = new Date(2026, 7, 9, 13, 51);
+  await saveTranscriptAndAutoSummarize(plugin, settings, "転写テキスト", 12, {
+    startTime: start,
+    audioPaths: ["C:/a.mp3"],
+    autoSummarizeImpl: spy,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "転写テキスト");
+  assert.equal(calls[0][3], "/manifest/dir");
+  assert.equal(calls[0][4].startTime.getTime(), start.getTime());
+  assert.deepEqual(calls[0][4].mp3Links, "[🎙️ 録音を再生](file:///C:/a.mp3)");
+  assert.equal(calls[0][4].durationSec, 12);
 });
 
 test("saveTranscriptAndAutoSummarize saves transcript before autoSummarize", async () => {
@@ -53,7 +75,7 @@ test("saveTranscriptAndAutoSummarize saves transcript before autoSummarize", asy
     order.push("summarize");
     return { ok: true };
   };
-  await saveTranscriptAndAutoSummarize(plugin, settings, "転写", 5, spy);
+  await saveTranscriptAndAutoSummarize(plugin, settings, "転写", 5, { autoSummarizeImpl: spy });
   assert.ok(order.some((o) => o.startsWith("create:")), "transcript should be saved");
   assert.equal(order[order.length - 1], "summarize", "autoSummarize should run after save");
 });

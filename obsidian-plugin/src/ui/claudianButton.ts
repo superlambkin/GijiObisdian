@@ -3,6 +3,7 @@ import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
+import { buildMp3Links } from "../notes/mp3Ref";
 import { appendToClaudianInput } from "./claudianApi";
 import { runAutoSummarize } from "../commands/autoSummarize";
 import { RecordingTimer } from "./recordingTimer";
@@ -151,23 +152,41 @@ function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonEle
  * コマンドフロー（recordSegment.ts::stopSegment）と同等の要約自動生成を
  * ツールバー 🎙️ ボタンにも配線する。autoSummarizeImpl はテスト用に注入可能。
  */
+export interface SaveAndSummarizeOptions {
+  startTime?: Date;
+  audioPaths?: string[];
+  autoSummarizeImpl?: typeof runAutoSummarize;
+}
+
 export async function saveTranscriptAndAutoSummarize(
   plugin: Plugin,
   settings: GijiSettings,
   text: string,
   durationSec: number | undefined,
-  autoSummarizeImpl: typeof runAutoSummarize = runAutoSummarize,
+  opts: SaveAndSummarizeOptions = {},
 ): Promise<void> {
+  const mp3Links = buildMp3Links(opts.audioPaths ?? []);
   if (settings.autoSaveTranscript) {
     try {
-      const saved = await saveTranscriptToFile(plugin.app, settings, text, durationSec);
+      const saved = await saveTranscriptToFile(
+        plugin.app,
+        settings,
+        text,
+        durationSec,
+        opts.startTime ?? new Date(),
+        mp3Links
+      );
       new Notice(saved.appended ? `📄 已追记到议事录: ${saved.path}` : `📄 转写已保存: ${saved.path}`);
     } catch (err: any) {
       new Notice(`保存转写失败: ${err?.message ?? err}`);
     }
   }
-  // 議事録の自動生成（fire-and-forget。内部で Notice 表示）
-  void autoSummarizeImpl(text, settings, plugin.app, plugin.manifest.dir);
+  const impl = opts.autoSummarizeImpl ?? runAutoSummarize;
+  await impl(text, settings, plugin.app, plugin.manifest.dir, {
+    startTime: opts.startTime,
+    durationSec,
+    mp3Links,
+  });
 }
 
 function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTimer): HTMLButtonElement {
@@ -189,17 +208,22 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
     btn.disabled = true;
     try {
       if (state.recorder.isRecording()) {
-        timer?.stop(); // ← 録音停止はこの時点
+        timer?.setTranscribing(); // 録音停止 → 文字起こし中
         let text: string | null = null;
         let durationSec: number | undefined;
+        let startTime: Date | undefined;
+        let audioPaths: string[] = [];
         try {
           const result = await state.recorder.stop(settings);
           if (result) {
             text = result.text;
             durationSec = result.durationSec;
+            startTime = result.startTime;
+            audioPaths = result.audioPaths ?? [];
           }
         } catch {
           // Recorder already surfaces Notice; reset UI below.
+          timer?.stop(); // ← 例外時もタイマーを停止（status bar の詰まり防止）
         }
         btn.textContent = "🎙️";
         btn.classList.remove("giji-recording");
@@ -207,7 +231,15 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         if (!text) return;
 
         // 転写保存（任意）+ 議事録の自動生成（要約）
-        await saveTranscriptAndAutoSummarize(plugin, settings, text, durationSec);
+        timer?.setSummarizing(); // 要約生成中
+        try {
+          await saveTranscriptAndAutoSummarize(plugin, settings, text, durationSec, {
+            startTime,
+            audioPaths,
+          });
+        } finally {
+          timer?.stop(); // 全処理完了で非表示
+        }
 
         // 設定「結果を Claudian 入力欄に挿入」が OFF の場合は挿入しない
         if (settings.insertToClaudianEnabled) {
