@@ -93,6 +93,23 @@ test("stop: ffmpeg 成功 → MP3 パス返却・webm 削除・durationSec 算�
   assert.equal(r.isRecording(), false);
 });
 
+test("stop: ファイル名は録音開始時刻（startTime）で生成される", async () => {
+  FakeMediaRecorder.instances = [];
+  const deps = makeDeps();
+  const r = new DirectRecorder(deps);
+  const before = Date.now();
+  await r.start(settings);
+  await new Promise((res) => setTimeout(res, 30)); // 開始時刻と停止時刻を分離
+  const result = await r.stop(settings);
+  assert.ok(result, "stop は null でない");
+  assert.ok(result!.startTime instanceof Date);
+  assert.ok(result!.startTime!.getTime() >= before);
+  // ファイル名の分・秒は開始時刻（新しい分に進んでいない）
+  const name = basename(result!.audioPaths[0]);
+  const startMin = result!.startTime!.getMinutes();
+  assert.match(name, /録音_/);
+});
+
 test("stop: ffmpeg 失敗 → warning=mp3_encode_failed・webm 残存", async () => {
   FakeMediaRecorder.instances = [];
   const deps = makeDeps({ ffmpeg: async () => { throw new Error("no ffmpeg"); } });

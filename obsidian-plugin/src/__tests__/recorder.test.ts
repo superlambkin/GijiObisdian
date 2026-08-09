@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { bridgeStart } from "../bridge";
-import { buildRecordingFileName, SegmentRecorder } from "../audio/recorder";
+import { buildRecordingFileName, buildSegmentResult, SegmentRecorder } from "../audio/recorder";
 
 // Chromium（Obsidian レンダラー）の ESM ローダーは裸の Node 組み込み指定子
 // （'fs' 等）を解決できず "Failed to resolve module specifier" になる。
@@ -80,4 +80,14 @@ test("recordingMethod=direct なら DirectRecorder に委譲（bridge 非呼出�
   const ok = await recorder.start(settings);
   assert.equal(ok, true);
   assert.equal(stub.startCalls, 1, "direct では DirectRecorder.start が 1 回呼ばれる");
+});
+
+test("buildSegmentResult carries audioPaths and startTime", () => {
+  const input = { audioPaths: ["C:/a.mp3", "C:/b.mp3"], durationSec: 12 };
+  const start = new Date(2026, 7, 9, 13, 51);
+  const res = buildSegmentResult("テキスト", input, start);
+  assert.equal(res.text, "テキスト");
+  assert.equal(res.durationSec, 12);
+  assert.deepEqual(res.audioPaths, ["C:/a.mp3", "C:/b.mp3"]);
+  assert.equal(res.startTime?.getTime(), start.getTime());
 });

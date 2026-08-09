@@ -10,6 +10,8 @@ import { DirectRecorder } from "./directRecorder";
 export interface SegmentResult {
   text: string;
   durationSec: number;
+  startTime?: Date;
+  audioPaths?: string[];
 }
 
 /** bridge / direct 共通の転写対象（BridgeStopResult と DirectRecordResult の共通部分） */
@@ -18,6 +20,15 @@ interface TranscribeInput {
   wavPath?: string;
   durationSec: number;
   warning?: string;
+}
+
+/** 転写結果を SegmentResult にまとめる（audioPaths と startTime を引き継ぐ） */
+export function buildSegmentResult(
+  text: string,
+  input: TranscribeInput,
+  startTime?: Date
+): SegmentResult {
+  return { text, durationSec: input.durationSec, startTime, audioPaths: input.audioPaths };
 }
 
 /**
@@ -32,6 +43,7 @@ export function buildRecordingFileName(now: Date, template: string): string {
 export class SegmentRecorder {
   private sessionId: string | null = null;
   private direct: DirectRecorder;
+  private startTime?: Date;
 
   constructor(private app: App, direct: DirectRecorder = new DirectRecorder()) {
     this.direct = direct;
@@ -42,6 +54,7 @@ export class SegmentRecorder {
   }
 
   async start(settings: GijiSettings): Promise<boolean> {
+    this.startTime = new Date();
     // PC ダイレクト録音：ブリッジ確認なし・プラグイン単独で開始
     if (settings.recordingMethod === "direct") {
       return this.direct.start(settings);
@@ -94,7 +107,7 @@ export class SegmentRecorder {
         parts.push(await stt.transcribe(chunk, settings.sttLang));
       }
     }
-    return { text: parts.join("\n\n"), durationSec: result.durationSec };
+    return buildSegmentResult(parts.join("\n\n"), result, this.startTime);
   }
 
   async stop(settings: GijiSettings): Promise<SegmentResult | null> {

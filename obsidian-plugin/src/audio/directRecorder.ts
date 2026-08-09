@@ -10,6 +10,7 @@ export interface DirectRecordResult {
   audioPaths: string[];
   wavPath?: string;
   durationSec: number;
+  startTime?: Date;
   warning?: string;
 }
 
@@ -118,9 +119,10 @@ export class DirectRecorder {
       const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
       const arrayBuf = await blob.arrayBuffer();
       this.chunks = []; // 次セッション用リセット（chunks は確定済み）
+      const startedAt = new Date(startTime);
       const base = (settings.recordingFileNameTemplate || "").trim()
-        ? buildRecordingFileName(new Date(), settings.recordingFileNameTemplate)
-        : `giji_${Date.now()}`; // テンプレート未設定時はブリッジ同様のフォールバック名
+        ? buildRecordingFileName(startedAt, settings.recordingFileNameTemplate)
+        : `giji_${startTime}`;
       const outDir = (settings.recordingSaveDir || "").trim() || tmpdir();
       const webmPath = join(outDir, `${base}.webm`);
       const mp3Path = join(outDir, `${base}.mp3`);
@@ -137,10 +139,10 @@ export class DirectRecorder {
           mp3Path,
         ]);
         await this.deps.deleteFile(webmPath);
-        return { audioPaths: [mp3Path], wavPath: mp3Path, durationSec };
+        return { audioPaths: [mp3Path], wavPath: mp3Path, durationSec, startTime: new Date(startTime) };
       } catch {
         // 明示的フォールバック：webm のまま残す（ブリッジの warning 文字列と同一）
-        return { audioPaths: [webmPath], wavPath: webmPath, durationSec, warning: "mp3_encode_failed" };
+        return { audioPaths: [webmPath], wavPath: webmPath, durationSec, startTime: new Date(startTime), warning: "mp3_encode_failed" };
       }
     } catch (err: any) {
       new Notice(`⚠️ 録音の停止に失敗しました: ${err?.message ?? err}`);
