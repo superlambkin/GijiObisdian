@@ -38,11 +38,7 @@ export default class GijiPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign(
-      { autoSummarizeEnabled: true },
-      DEFAULT_SETTINGS,
-      await this.loadData()
-    );
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     // 廃止・未対応プロバイダー値のマイグレーション（例: doubao / 旧デフォルト groq）
     if (!STT_PROVIDERS.includes(this.settings.sttProvider)) {
       this.settings.sttProvider = "openai";
