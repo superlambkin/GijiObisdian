@@ -250,7 +250,13 @@ function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElem
   }
 }
 
-export function setupClaudianButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTimer): () => void {
+export function setupClaudianButton(
+  plugin: Plugin,
+  settings: GijiSettings,
+  timer?: RecordingTimer,
+): { cleanup: () => void; refresh: () => void } {
+  let interval: ReturnType<typeof setInterval> | null = null;
+
   function scan() {
     const toolbars = document.querySelectorAll(TOOLBAR_SELECTOR);
     for (let i = 0; i < toolbars.length; i++) {
@@ -258,10 +264,24 @@ export function setupClaudianButton(plugin: Plugin, settings: GijiSettings, time
     }
   }
 
-  scan();
-  const showBridge = shouldShowBridgeButton(settings.recordingMethod);
-  if (showBridge) {
-    refreshBridgeButtons(settings).catch(() => {});
+  function syncPolling() {
+    if (shouldShowBridgeButton(settings.recordingMethod)) {
+      if (interval) return;
+      refreshBridgeButtons(settings).catch(() => {});
+      interval = setInterval(() => {
+        refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
+      }, 5000);
+    } else {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    }
+  }
+
+  function refresh() {
+    scan();
+    syncPolling();
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -283,15 +303,17 @@ export function setupClaudianButton(plugin: Plugin, settings: GijiSettings, time
 
   observer.observe(document.body, { childList: true, subtree: true });
 
-  const interval = showBridge
-    ? setInterval(() => {
-        refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
-      }, 5000)
-    : null;
+  refresh();
 
-  return () => {
-    if (interval) clearInterval(interval);
-    observer.disconnect();
-    document.querySelectorAll(`[${BTN_MARK}]`).forEach((btn) => btn.remove());
+  return {
+    refresh,
+    cleanup: () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      observer.disconnect();
+      document.querySelectorAll(`[${BTN_MARK}]`).forEach((btn) => btn.remove());
+    },
   };
 }

@@ -12,6 +12,7 @@ const LLM_PROVIDERS = ["claudian", "cloud", "ollama"];
 export default class GijiPlugin extends Plugin {
   settings: GijiSettings = DEFAULT_SETTINGS;
   recordingTimer!: RecordingTimer;
+  claudianUi: { cleanup: () => void; refresh: () => void } | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -19,10 +20,13 @@ export default class GijiPlugin extends Plugin {
     await ensureTemplatesDir(this.app, this.manifest.dir);
 
     this.recordingTimer = new RecordingTimer(this.addStatusBarItem());
+    this.register(() => this.recordingTimer.stop());
 
     this.addSettingTab(new GijiSettingsTab(this.app, this));
 
-    this.register(setupClaudianButton(this, this.settings, this.recordingTimer));
+    const claudianUi = setupClaudianButton(this, this.settings, this.recordingTimer);
+    this.register(claudianUi.cleanup);
+    this.claudianUi = claudianUi;
 
     this.addCommand({
       id: "record-start",
@@ -54,5 +58,6 @@ export default class GijiPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    this.claudianUi?.refresh();
   }
 }
