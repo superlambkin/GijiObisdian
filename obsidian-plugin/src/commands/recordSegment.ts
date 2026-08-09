@@ -3,6 +3,7 @@ import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { appendSegmentNote } from "../notes/generator";
 import { runAutoSummarize } from "./autoSummarize";
+import { RecordingTimer } from "../ui/recordingTimer";
 
 let recorder: SegmentRecorder | null = null;
 
@@ -11,15 +12,17 @@ function getRecorder(app: App): SegmentRecorder {
   return recorder;
 }
 
-export async function startSegment(app: App, settings: GijiSettings) {
+export async function startSegment(app: App, settings: GijiSettings, timer?: RecordingTimer) {
   const r = getRecorder(app);
   const started = await r.start(settings);
   if (started) {
+    timer?.start();
     new Notice("🎙️ 録音中… もう一度「停止して転写」を実行すると終了します");
   }
 }
 
-export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string) {
+export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
+  timer?.stop();
   const r = getRecorder(app);
   const result = await r.stop(settings);
   if (result === null) {
