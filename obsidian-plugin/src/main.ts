@@ -7,6 +7,7 @@ import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
 import { RecordingTimer } from "./ui/recordingTimer";
 import { injectRecordingStyles } from "./ui/recordingStyles";
+import { injectSettingsTabStyles } from "./ui/settingsTabsStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
 
 const STT_PROVIDERS = ["openai", "google", "groq"];
@@ -23,6 +24,7 @@ export default class GijiPlugin extends Plugin {
     await ensureTemplatesDir(this.app, this.manifest.dir);
 
     injectRecordingStyles();
+    injectSettingsTabStyles();
     this.recordingTimer = new RecordingTimer(this.addStatusBarItem());
     this.register(() => this.recordingTimer.stop());
 

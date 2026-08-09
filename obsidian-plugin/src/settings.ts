@@ -130,7 +130,21 @@ import {
   saveProviderProfile,
 } from "./providers/llmPresets";
 
+/** 設定画面のタブ ID */
+export type SettingsTabId = "recording" | "transcript" | "summary" | "other";
+
+/** 設定画面のタブ定義（表示順） */
+export const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string }> = [
+  { id: "recording", label: "① 🎙️ 録音" },
+  { id: "transcript", label: "② 📝 文字起こし" },
+  { id: "summary", label: "③ 🤖 要約" },
+  { id: "other", label: "④ ⚙️ その他" },
+];
+
 export class GijiSettingsTab extends PluginSettingTab {
+  /** 現在アクティブな設定タブ */
+  activeTab: SettingsTabId = "recording";
+
   constructor(app: App, private plugin: any) {
     super(app, plugin);
   }
@@ -157,25 +171,56 @@ export class GijiSettingsTab extends PluginSettingTab {
     }
   }
 
+  /** タブ切替（設定内容は display() で再描画） */
+  setActiveTab(id: SettingsTabId): void {
+    this.activeTab = id;
+    if (this.containerEl) void this.display();
+  }
+
   async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
     const version = this.plugin.manifest?.version ?? "0.0.0";
     containerEl.createEl("h2", { text: `GijiObsidian 設定（v${version}）` });
-    containerEl.createEl("p", {
-      text: "作業手順の時系列で分類：① 録音 → ② 文字起こし → ③ 要約 → ④ その他",
-      cls: "setting-item-description",
-    });
 
+    // タブナビゲーション
+    const tabBar = containerEl.createDiv({ cls: "giji-settings-tabs" });
+    const content = containerEl.createDiv({ cls: "giji-settings-tab-content" });
+
+    for (const tab of SETTINGS_TABS) {
+      const btn = tabBar.createEl("button", {
+        text: tab.label,
+        cls: `giji-settings-tab${tab.id === this.activeTab ? " is-active" : ""}`,
+      });
+      btn.addEventListener("click", () => this.setActiveTab(tab.id));
+    }
+
+    switch (this.activeTab) {
+      case "recording":
+        this.renderRecordingTab(content);
+        break;
+      case "transcript":
+        this.renderTranscriptTab(content);
+        break;
+      case "summary":
+        await this.renderSummaryTab(content);
+        break;
+      case "other":
+        this.renderOtherTab(content);
+        break;
+    }
+  }
+
+  /* ==================== ① 🎙️ 録音 ==================== */
+  renderRecordingTab(content: HTMLElement): void {
     const s = this.plugin.settings as GijiSettings;
 
-    /* ==================== ① 🎙️ 録音 ==================== */
-    new Setting(containerEl)
+    new Setting(content)
       .setName("① 🎙️ 録音")
       .setDesc("マイク → ローカル録音ブリッジ（Python FastAPI）で WAV を録音します")
       .setHeading();
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🎙️ 録音手法")
       .setDesc("PC ダイレクト録音はブリッジ不要でマイクのみ。Teams 会議（PC 音声）はブリッジ録音を選択")
       .addDropdown((d) =>
@@ -194,7 +239,7 @@ export class GijiSettingsTab extends PluginSettingTab {
     let bridgeUrl: any;
     let bridgeDir: any;
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🎙️ 録音モード")
       .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ・ブリッジ v0.2.0 以降が必要）")
       .addDropdown((d) => {
@@ -210,7 +255,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           });
       });
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("ブリッジ URL")
       .addText((t) => {
         bridgeUrl = t;
@@ -220,7 +265,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("ブリッジのディレクトリ")
       .addText((t) => {
         bridgeDir = t;
@@ -238,7 +283,7 @@ export class GijiSettingsTab extends PluginSettingTab {
     };
     updateBridgeDisabled(s.recordingMethod);
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("録音ファイルの保存場所")
       .setDesc(`PC の絶対パス（デフォルト: ${DEFAULT_RECORDING_SAVE_DIR}）`)
       .addText((t) =>
@@ -248,7 +293,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("録音ファイル名テンプレート")
       .setDesc("録音ファイルの名前。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
       .addText((t) =>
@@ -258,11 +303,11 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("録音フォーマット")
       .setDesc("MP3 64 kbps（音声向け圧縮・16kHz モノラル）。Whisper の 25MB 制限のため、24MB 以上は自動分割して文字起こしします");
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("📂 録音フォルダを開く")
       .setDesc("録音ファイルの保存場所をエクスプローラーで開きます（無ければ作成）")
       .addButton((btn) =>
@@ -280,7 +325,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("追加録音")
       .setDesc("ON の場合、同じ時間（年月日時が同一）に開始した録音は、その時間の最早の議事録 MD に追記されます")
       .addToggle((t) =>
@@ -289,14 +334,18 @@ export class GijiSettingsTab extends PluginSettingTab {
           await this.save();
         })
       );
+  }
 
-    /* ==================== ② 📝 文字起こし ==================== */
-    new Setting(containerEl)
+  /* ==================== ② 📝 文字起こし ==================== */
+  renderTranscriptTab(content: HTMLElement): void {
+    const s = this.plugin.settings as GijiSettings;
+
+    new Setting(content)
       .setName("② 📝 文字起こし")
       .setDesc("WAV → クラウド STT で文字起こし → 議事録 MD として自動保存します")
       .setHeading();
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("STT プロバイダー")
       .addDropdown((d) =>
         d.addOption("openai", "OpenAI（デフォルト）")
@@ -309,7 +358,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("STT API キー")
       .addText((t) =>
         t.setValue(s.sttApiKey).onChange(async (v: string) => {
@@ -318,7 +367,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("言語")
       .addDropdown((d) =>
         d.addOption("auto", "自動検出")
@@ -332,7 +381,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🔌 接続テスト")
       .setDesc("内蔵の音声サンプルで ② 文字起こしの設定が使えるか検証します")
       .addButton((btn) =>
@@ -348,7 +397,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("結果を Claudian 入力欄に挿入")
       .setDesc("ON の場合、文字起こし後のテキストを Claudian の入力欄に表示します（デフォルト: ON）")
       .addToggle((t) =>
@@ -358,7 +407,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("転写を自動保存")
       .setDesc("録音の文字起こし後、Markdown 文書として自動保存します")
       .addToggle((t) =>
@@ -368,7 +417,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("転写の保存先")
       .setDesc("転写 MD の Vault 内保存先（デフォルト: 議事録）")
       .addText((t) =>
@@ -378,7 +427,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("議事録ファイル名テンプレート")
       .setDesc("議事録 MD のファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
       .addText((t) =>
@@ -388,7 +437,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("転写ファイル名テンプレート（録音_...）")
       .setDesc("文字起こしMDのファイル名。プレースホルダ: {{year}} {{month}} {{day}} {{hour}} {{minute}} {{second}} {{date}} {{time}}")
       .addText((t) =>
@@ -397,16 +446,20 @@ export class GijiSettingsTab extends PluginSettingTab {
           await this.save();
         })
       );
+  }
 
-    /* ==================== ③ 🤖 要約 ==================== */
-    new Setting(containerEl)
+  /* ==================== ③ 🤖 要約 ==================== */
+  async renderSummaryTab(content: HTMLElement): Promise<void> {
+    const s = this.plugin.settings as GijiSettings;
+
+    new Setting(content)
       .setName("③ 🤖 要約")
       .setDesc("転写テキスト → LLM で議事録を生成します（「音声をインポートして議事録生成」コマンドで使用）")
       .setHeading();
 
     // === 基本セクション（常時表示） ===
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🔌 プリセット")
       .setDesc("主要プロバイダのプリセットです。選択すると baseUrl・モデル・API 形式・既定 max tokens が自動入力されます")
       .addDropdown((d) => {
@@ -420,7 +473,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🔑 API キー")
       .setDesc(
         LLM_PRESETS[s.llmProvider as keyof typeof LLM_PRESETS]?.apiKeyHint ??
@@ -433,7 +486,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("🧪 接続テスト")
       .setDesc("プリセット＋API キーで疎通確認します。claudian はプラグイン連携を検出")
       .addButton((btn) =>
@@ -449,7 +502,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     // === 上級者向け詳細設定（折り畳み） ===
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("⚙️ 上級者向け詳細設定")
       .setDesc("baseUrl・モデル・API 形式・タイムアウトなどの詳細設定")
       .addToggle((t) =>
@@ -461,7 +514,7 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     if (s.llmAdvancedOpen) {
-      new Setting(containerEl)
+      new Setting(content)
         .setName("LLM baseUrl")
         .setDesc("API のエンドポイント URL（プリセット既定を上書き）")
         .addText((t) =>
@@ -471,7 +524,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("LLM モデル")
         .setDesc("モデル ID（例: gpt-4o-mini / claude-3-5-sonnet-latest など）")
         .addText((t) =>
@@ -481,7 +534,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("LLM API 形式（上書き）")
         .setDesc("プリセット既定ではなく手動で API 形式を選ぶ")
         .addToggle((t) =>
@@ -496,7 +549,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         );
 
       if (s.llmApiFormatOverride) {
-        new Setting(containerEl)
+        new Setting(content)
           .setName("API 形式")
           .setDesc("OpenAI 互換（/chat/completions）または Anthropic 互換（/v1/messages）")
           .addDropdown((d) =>
@@ -511,7 +564,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           );
       }
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("Anthropic API バージョン")
         .setDesc("例: 2023-06-01（Anthropic 形式選択時のみ使用）")
         .addText((t) =>
@@ -521,7 +574,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("Max tokens")
         .setDesc(
           `LLM 出力トークン上限（Anthropic 形式では必須）。プリセット既定: ${
@@ -536,7 +589,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("⏱️ LLM タイムアウト（ms）")
         .setDesc("1 試行あたりの上限時間。超えると中断してリトライします（デフォルト: 90000）")
         .addText((t) =>
@@ -547,7 +600,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("🔁 LLM リトライ回数")
         .setDesc("タイムアウト・429・5xx 時に指数バックオフで再試行する回数（デフォルト: 2。0 で無効）")
         .addText((t) =>
@@ -558,7 +611,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("📋 要約自動生成")
         .setDesc("ON の場合、転写完了後に自動で議事録を生成します（OFF で従来通り）")
         .addToggle((t) =>
@@ -568,7 +621,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(containerEl)
+      new Setting(content)
         .setName("📝 デバッグログ出力")
         .setDesc("ON で giji-obsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
         .addToggle((t) =>
@@ -579,7 +632,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         );
     }
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("議事録テンプレートの場所")
       .setDesc("Vault 内の MD か、プラグインディレクトリのテンプレートフォルダから選択します")
       .addDropdown((d) =>
@@ -595,7 +648,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     if (s.minutesTemplateSource === "directory") {
       const templatesDir = `${this.plugin.manifest.dir}/templates`;
-      const setting = new Setting(containerEl)
+      const setting = new Setting(content)
         .setName("テンプレートファイル")
         .setDesc(`${templatesDir} 内の MD ファイルから選択します`);
       try {
@@ -617,7 +670,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         setting.setDesc(`⚠️ ${templatesDir} を読み込めませんでした（プラグイン再読み込みで作成されます）`);
       }
     } else {
-      new Setting(containerEl)
+      new Setting(content)
         .setName("テンプレートのパス")
         .setDesc("Vault 内のテンプレート MD（デフォルト: 00_Vault管理/議事録テンプレート.md）")
         .addText((t) =>
@@ -628,7 +681,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         );
     }
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("議事録の保存先")
       .setDesc("生成した議事録 MD の Vault 内保存先（デフォルト: 議事録）")
       .addText((t) =>
@@ -638,7 +691,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("議事録に転写原文を含める")
       .setDesc("ON の場合、生成した議事録 MD に完全な転写原文を添付します")
       .addToggle((t) =>
@@ -647,13 +700,17 @@ export class GijiSettingsTab extends PluginSettingTab {
           await this.save();
         })
       );
+  }
 
-    /* ==================== ④ ⚙️ その他 ==================== */
-    new Setting(containerEl)
+  /* ==================== ④ ⚙️ その他 ==================== */
+  renderOtherTab(content: HTMLElement): void {
+    const s = this.plugin.settings as GijiSettings;
+
+    new Setting(content)
       .setName("④ ⚙️ その他")
       .setHeading();
 
-    new Setting(containerEl)
+    new Setting(content)
       .setName("要約メール添付")
       .setDesc("（準備中）要約生成後にメールへ添付して送信します（デフォルト: OFF）")
       .addToggle((t) =>

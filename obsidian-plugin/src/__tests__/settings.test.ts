@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, GijiSettingsTab, isBridgeSettingDisabled } from "../settings";
+import {
+  DEFAULT_SETTINGS,
+  GijiSettingsTab,
+  isBridgeSettingDisabled,
+  SETTINGS_TABS,
+} from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttProvider, "openai");
@@ -44,6 +49,30 @@ test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
 test("isBridgeSettingDisabled", () => {
   assert.equal(isBridgeSettingDisabled("bridge"), false);
   assert.equal(isBridgeSettingDisabled("direct"), true);
+});
+
+// 設定画面の 4 タブ構成（録音/文字起こし/要約/その他）
+test("SETTINGS_TABS: 4 つのタブ（録音/文字起こし/要約/その他）を持つ", () => {
+  assert.deepEqual(
+    SETTINGS_TABS.map((t) => t.id),
+    ["recording", "transcript", "summary", "other"]
+  );
+  for (const t of SETTINGS_TABS) {
+    assert.ok(t.label.length > 0, `tab ${t.id} のラベルが空`);
+  }
+});
+
+test("GijiSettingsTab: setActiveTab でタブ切替できる", () => {
+  const plugin = {
+    settings: { ...DEFAULT_SETTINGS },
+    saveSettings: async () => {},
+  };
+  const tab = new GijiSettingsTab({} as any, plugin as any);
+  assert.equal(tab.activeTab, "recording"); // デフォルトは録音
+  tab.setActiveTab("summary");
+  assert.equal(tab.activeTab, "summary");
+  tab.setActiveTab("other");
+  assert.equal(tab.activeTab, "other");
 });
 
 // ユーザー要求: 「テスト成功した場合、対応LLMのAPIキーを保存する」
