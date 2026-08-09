@@ -239,6 +239,48 @@ test("overwritePath: 連番を作らず上書きし 議事録番号・created �
   assert.match(writtenContent as string, /新しい議事録/);
 });
 
+// H2: autoSummarize overwrite path の TOCTOU + 原子性欠如の回帰テスト
+test("overwritePath: adapter.write が throw しても既存ファイルは変更されず ok:false", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "---\n議事録番号: \ncreated: \nmodified: \n---\n新しい議事録" } }] }),
+  })) as any;
+  const OLD = "---\n議事録番号: 20260809-2214\ncreated: 2026-08-09\n---\n古い議事録";
+  const notices: string[] = [];
+  // setup.cjs の Notice スタブを、呼ばれた文言を記録する版に差し替える
+  const obsidian = require("obsidian");
+  const OriginalNotice = obsidian.Notice;
+  // スタブは単純なコンストラクタ関数なので、prototype.constructor をラップする
+  function CapturingNotice(this: any, m: string) { notices.push(m); }
+  Object.assign(CapturingNotice, OriginalNotice);
+  (obsidian as any).Notice = CapturingNotice as any;
+  try {
+    const fakeApp: any = {
+      vault: {
+        adapter: {
+          async exists(p: string) { return p === "議事録/議事録_2026年08月09日22時14分.md"; },
+          async read(_p: string) { return OLD; },
+          async write(_p: string, _c: string) { throw new Error("disk full"); },
+        },
+        async exists() { return true; },
+        async create() { throw new Error("create は呼ばれないはず"); },
+      },
+    };
+    const res = await runAutoSummarize("t", baseSettings, fakeApp, "/manifest/dir", {
+      fetchImpl,
+      startTime: new Date(2026, 7, 9, 22, 14),
+      overwritePath: "議事録/議事録_2026年08月09日22時14分.md",
+    });
+    assert.equal(res.ok, false);
+    assert.match(res.error ?? "", /disk full/);
+    // 上書き失敗は「上書き」文言の Notice でユーザに明示されること（"生成" と区別）
+    const allNotices = notices.join("\n");
+    assert.match(allNotices, /上書き/, "上書き失敗 Notice が出ること");
+  } finally {
+    (obsidian as any).Notice = OriginalNotice;
+  }
+});
+
 test("onProgress: connecting → generating → saving の順で発火", async () => {
   const fetchImpl = (async () => ({
     ok: true,

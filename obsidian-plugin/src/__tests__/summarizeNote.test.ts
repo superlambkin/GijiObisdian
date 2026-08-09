@@ -80,6 +80,22 @@ test("extractTranscript: マーカー無しは frontmatter 除去後の全文", 
   assert.equal(t, "ただの本文");
 });
 
+// H1: stripFrontmatter 正規表現ドリフト＋空 body 副作用の回帰テスト
+test("extractTranscript: 標準空 frontmatter (\"---\\n---\\n\") が剥がされる", () => {
+  // ファイル先頭の空 frontmatter は剥がして、本文だけ取り出すこと
+  const t = extractTranscript("---\n---\n本文テキスト");
+  assert.equal(t, "本文テキスト");
+});
+
+test("extractTranscript: ファイル途中（先頭でない位置）の \"---\\n---\\n\" は剥がされない", () => {
+  // 本文中の "---\n---\n" は水平線/マーカーであり frontmatter ではない
+  // → 誤って剥がすと本文が消失するため、剥がされないことを検証する（false positive 防止）
+  const md = "前置き本文\n---\n---\n後置き本文";
+  const t = extractTranscript(md);
+  assert.match(t, /前置き本文/);
+  assert.match(t, /後置き本文/);
+});
+
 test("extractRecordingMeta: 概要表から日時・時間・mp3 を解析", () => {
   const meta = extractRecordingMeta(SAMPLE_NOTE, { basename: "録音_2026年08月09日22時14分" });
   assert.equal(meta.startTime?.getHours(), 22);

@@ -15,9 +15,10 @@ export function isTranscriptNote(app: App, file: TFile): boolean {
 }
 
 function stripFrontmatter(content: string): string {
-  // 空フロントマター ("---\n---\n") も剥がすため、本体行がなくても末尾 --- に到達できるよう
-  // 中身グループを省略可能にする
-  return content.replace(/^---\r?\n(?:[\s\S]*?\r?\n)?---\r?\n?/, "");
+  // 設計書原本の正規表現（^ アンカーでファイル先頭に限定）。
+  // 空フロントマター ("---\n---\n") も剥がせるよう、本体行がなくても
+  // 末尾 --- に到達できるよう中身グループを省略可能にしている。
+  return content.replace(/^---\r?\n(?:[\s\S]*?\r?\n)?---(\r?\n|$)/, "");
 }
 
 /** 「## 〜」セクションの本文を抽出（見出し行は含まない） */

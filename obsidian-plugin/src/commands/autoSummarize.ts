@@ -146,15 +146,24 @@ export async function runAutoSummarize(
 
     if (opts.overwritePath) {
       let overwritten = false;
-      if (await app.vault.adapter.exists(opts.overwritePath)) {
-        const old = await (app.vault.adapter as any).read(opts.overwritePath);
-        const num = getFrontmatterField(old, "議事録番号");
-        if (num) out = setFrontmatterField(out, "議事録番号", num);
-        const oldCreated = getFrontmatterField(old, "created");
-        if (oldCreated) out = setFrontmatterField(out, "created", oldCreated);
-        overwritten = true;
+      try {
+        if (await app.vault.adapter.exists(opts.overwritePath)) {
+          const old = await (app.vault.adapter as any).read(opts.overwritePath);
+          const num = getFrontmatterField(old, "議事録番号");
+          if (num) out = setFrontmatterField(out, "議事録番号", num);
+          const oldCreated = getFrontmatterField(old, "created");
+          if (oldCreated) out = setFrontmatterField(out, "created", oldCreated);
+          overwritten = true;
+        }
+        await (app.vault.adapter as any).write(opts.overwritePath, out);
+      } catch (e) {
+        // TOCTOU 対策：上書きブロック全体を try/catch で包み、失敗時は既存ファイルを
+        // 変更せずに Notice で明示する（生成失敗と区別する文言）。
+        const msg = (e as Error).message;
+        new Notice(`⚠️ 議事録の上書きに失敗しました: ${msg}`);
+        await emitSummarizeLog("fail", `error="overwrite_failed: ${(msg || "").replace(/"/g, "'")}"`);
+        return { ok: false, error: msg };
       }
-      await (app.vault.adapter as any).write(opts.overwritePath, out);
       new Notice(
         overwritten
           ? `✅ 議事録を上書きしました（${totalSec} 秒）`
