@@ -13,11 +13,22 @@ export interface RecordingTimerDeps {
 
 type TimerMode = "recording" | "summarizing" | null;
 
+/** 要約の進捗ステージ */
+export type SummarizeStage = "connecting" | "generating" | "saving";
+
+const SUMMARIZE_LABELS: Record<SummarizeStage, string> = {
+  connecting: "📡 接続中…",
+  generating: "✍️ 生成中…",
+  saving: "💾 保存中…",
+};
+
 export class RecordingTimer {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private startTime = 0;
   private mode: TimerMode = null;
   private deps: Required<Pick<RecordingTimerDeps, "setInterval" | "clearInterval" | "now">>;
+  private summarizeStage: SummarizeStage = "connecting";
+  private summarizeChars: number | null = null;
 
   constructor(private el: HTMLElement, deps: RecordingTimerDeps = {}) {
     this.el.hide();
@@ -32,6 +43,11 @@ export class RecordingTimer {
     return this.intervalId !== null;
   }
 
+  /** 要約実行中か（二重実行防止用） */
+  isSummarizing(): boolean {
+    return this.mode === "summarizing";
+  }
+
   private clearTimer(): void {
     if (this.intervalId !== null) {
       this.deps.clearInterval(this.intervalId);
@@ -39,21 +55,33 @@ export class RecordingTimer {
     }
   }
 
-  private startTicking(mode: Exclude<TimerMode, null>, label: string): void {
+  private summarizeLabel(): string {
+    const base = SUMMARIZE_LABELS[this.summarizeStage];
+    const chars =
+      this.summarizeStage === "generating" && this.summarizeChars !== null
+        ? ` ${this.summarizeChars.toLocaleString()}字`
+        : "";
+    return `${base}${chars}`;
+  }
+
+  private render(): void {
+    const label = this.mode === "summarizing" ? this.summarizeLabel() : "🎙️";
+    this.el.setText(`${label} ${formatElapsed(this.deps.now() - this.startTime)}`);
+  }
+
+  private startTicking(mode: Exclude<TimerMode, null>): void {
     this.clearTimer();
     this.mode = mode;
     this.startTime = this.deps.now();
-    this.el.setText(`${label} 00:00`);
+    this.render();
     this.el.show();
-    this.intervalId = this.deps.setInterval(() => {
-      this.el.setText(`${label} ${formatElapsed(this.deps.now() - this.startTime)}`);
-    }, 1000);
+    this.intervalId = this.deps.setInterval(() => this.render(), 1000);
   }
 
   start(): void {
     if (this.mode === "recording") return; // 録音中の二重開始は無視
     // 要約生成中に新規録音が始まった場合は録音表示へ切り替える
-    this.startTicking("recording", "🎙️");
+    this.startTicking("recording");
   }
 
   stop(): void {
@@ -70,7 +98,18 @@ export class RecordingTimer {
   }
 
   setSummarizing(): void {
-    // 要約生成の経過時間を表示（LLM レイテンシ調査の観測点でもある）
-    this.startTicking("summarizing", "🤖 要約生成中…");
+    // 要約開始時は接続待ち（TTFB）から表示
+    this.summarizeStage = "connecting";
+    this.summarizeChars = null;
+    this.startTicking("summarizing");
+  }
+
+  /** 要約ステージを更新。summarizing モード以外では表示に反映しない */
+  updateSummarizeStage(stage: SummarizeStage, receivedChars?: number): void {
+    this.summarizeStage = stage;
+    if (receivedChars !== undefined) this.summarizeChars = receivedChars;
+    if (this.mode === "summarizing" && this.intervalId !== null) {
+      this.render();
+    }
   }
 }

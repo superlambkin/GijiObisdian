@@ -108,12 +108,12 @@ test("setSummarizing shows 要約生成中 with elapsed time and ticks", () => {
   timer.start();
   timer.setSummarizing();
   assert.equal(timer.isRunning(), true);
-  assert.equal(el.getText(), "🤖 要約生成中… 00:00");
+  assert.equal(el.getText(), "📡 接続中… 00:00");
   assert.equal(el.isVisible(), true);
   assert.equal(fake.handlerCount(), 1);
   fake.setNow(95_000);
   fake.fire();
-  assert.equal(el.getText(), "🤖 要約生成中… 01:35");
+  assert.equal(el.getText(), "📡 接続中… 01:35");
 });
 
 test("summarizing の経過時間は setSummarizing 時点から計測される", () => {
@@ -124,10 +124,10 @@ test("summarizing の経過時間は setSummarizing 時点から計測される"
   fake.setNow(60_000); // 録音 60 秒経過
   fake.fire();
   timer.setSummarizing(); // 要約開始で 00:00 にリセット
-  assert.equal(el.getText(), "🤖 要約生成中… 00:00");
+  assert.equal(el.getText(), "📡 接続中… 00:00");
   fake.setNow(65_000);
   fake.fire();
-  assert.equal(el.getText(), "🤖 要約生成中… 00:05");
+  assert.equal(el.getText(), "📡 接続中… 00:05");
 });
 
 test("要約生成中に start すると録音表示へ切り替わる", () => {
@@ -137,11 +137,54 @@ test("要約生成中に start すると録音表示へ切り替わる", () => {
   timer.setSummarizing();
   fake.setNow(30_000);
   fake.fire();
-  assert.equal(el.getText(), "🤖 要約生成中… 00:30");
+  assert.equal(el.getText(), "📡 接続中… 00:30");
   timer.start(); // 要約完了を待たずに新規録音開始
   assert.equal(el.getText(), "🎙️ 00:00");
   fake.setNow(33_000);
   fake.fire();
   assert.equal(el.getText(), "🎙️ 00:03");
   assert.equal(fake.handlerCount(), 1);
+});
+
+test("updateSummarizeStage: generating で受信文字数付き表示", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.setSummarizing();
+  assert.equal(el.getText(), "📡 接続中… 00:00");
+  timer.updateSummarizeStage("generating", 12345);
+  assert.equal(el.getText(), "✍️ 生成中… 12,345字 00:00");
+  fake.setNow(65_000);
+  fake.fire();
+  assert.equal(el.getText(), "✍️ 生成中… 12,345字 01:05");
+});
+
+test("updateSummarizeStage: saving 表示", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.setSummarizing();
+  timer.updateSummarizeStage("saving");
+  assert.equal(el.getText(), "💾 保存中… 00:00");
+});
+
+test("録音モード中の updateSummarizeStage は表示を切り替えない", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.start();
+  timer.updateSummarizeStage("generating", 100);
+  assert.equal(el.getText(), "🎙️ 00:00");
+  // 要約モードでないので isSummarizing は false
+  assert.equal(timer.isSummarizing(), false);
+});
+
+test("isSummarizing: setSummarizing 後は true、stop で false", () => {
+  const el = makeFakeEl();
+  const timer = new RecordingTimer(el, makeFakeDeps().deps);
+  assert.equal(timer.isSummarizing(), false);
+  timer.setSummarizing();
+  assert.equal(timer.isSummarizing(), true);
+  timer.stop();
+  assert.equal(timer.isSummarizing(), false);
 });

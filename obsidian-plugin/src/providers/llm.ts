@@ -10,9 +10,17 @@ export interface LlmCallStats {
   retries: number;
 }
 
+/** LLM 生成の進捗コールバック（SSE ストリーミング時に発火） */
+export interface LlmProgress {
+  /** 最初のチャンク到達時（TTFB）に1回だけ呼ばれる */
+  onFirstChunk?: () => void;
+  /** テキスト受信ごとに累積文字数で呼ばれる */
+  onChunk?: (receivedChars: number) => void;
+}
+
 export interface LlmProvider {
   id: string;
-  complete(system: string, user: string, stats?: LlmCallStats): Promise<string>;
+  complete(system: string, user: string, stats?: LlmCallStats, progress?: LlmProgress): Promise<string>;
 }
 
 /** リトライ対象の HTTP エラー（408/409/429/5xx） */
@@ -84,7 +92,8 @@ interface CompleteOutcome {
 async function consumeSse(
   res: Response,
   startedMs: number,
-  handle: (json: any) => ExtractedEvent
+  handle: (json: any) => ExtractedEvent,
+  progress?: LlmProgress
 ): Promise<CompleteOutcome> {
   const reader = (res.body as any).getReader();
   const decoder = new TextDecoder();
@@ -93,8 +102,16 @@ async function consumeSse(
   let ttfbMs: number | undefined;
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let lastNotified = -1;
+  const notifyProgress = () => {
+    if (progress?.onChunk && text.length !== lastNotified) {
+      lastNotified = text.length;
+      progress.onChunk(text.length);
+    }
+  };
 
   const handleLine = (line: string) => {
+    // （既存のまま変更なし）
     const t = line.trim();
     if (!t.startsWith("data:")) return;
     const payload = t.slice(5).trim();
@@ -112,15 +129,20 @@ async function consumeSse(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (ttfbMs === undefined) ttfbMs = Date.now() - startedMs;
+    if (ttfbMs === undefined) {
+      ttfbMs = Date.now() - startedMs;
+      progress?.onFirstChunk?.();
+    }
     buf += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buf.indexOf("\n")) >= 0) {
       handleLine(buf.slice(0, idx));
       buf = buf.slice(idx + 1);
     }
+    notifyProgress();
   }
-  if (buf.trim()) handleLine(buf); // 末尾の残り行
+  if (buf.trim()) handleLine(buf);
+  notifyProgress();
   return { text, ttfbMs, inputTokens, outputTokens };
 }
 
@@ -132,7 +154,8 @@ async function postOnce(
   body: unknown,
   timeoutMs: number,
   handleSse: (json: any) => ExtractedEvent,
-  handleFull: (data: any) => CompleteOutcome
+  handleFull: (data: any) => CompleteOutcome,
+  progress?: LlmProgress
 ): Promise<CompleteOutcome> {
   const startedMs = Date.now();
   const { signal, clear } = withTimeout(timeoutMs);
@@ -150,10 +173,15 @@ async function postOnce(
     }
     const contentType = (res.headers as any)?.get?.("content-type") ?? "";
     if ((res as any).body && String(contentType).includes("text/event-stream")) {
-      return await consumeSse(res as any, startedMs, handleSse);
+      return await consumeSse(res as any, startedMs, handleSse, progress);
     }
     // 非ストリーミング応答（モック / SSE 非対応プロキシ）フォールバック
-    return handleFull(await res.json());
+    const out = handleFull(await res.json());
+    if (out.text) {
+      progress?.onFirstChunk?.();
+      progress?.onChunk?.(out.text.length);
+    }
+    return out;
   } finally {
     clear();
   }
@@ -175,7 +203,7 @@ class OpenAiCompatibleLlm implements LlmProvider {
     private callOpts: CallOptions
   ) {}
 
-  async complete(system: string, user: string, stats?: LlmCallStats): Promise<string> {
+  async complete(system: string, user: string, stats?: LlmCallStats, progress?: LlmProgress): Promise<string> {
     const body: any = {
       model: this.model,
       messages: [
@@ -206,7 +234,8 @@ class OpenAiCompatibleLlm implements LlmProvider {
               text: data?.choices?.[0]?.message?.content ?? "",
               inputTokens: data?.usage?.prompt_tokens,
               outputTokens: data?.usage?.completion_tokens,
-            })
+            }),
+            progress
           ),
         { maxRetries: this.callOpts.maxRetries }
       );
@@ -236,7 +265,7 @@ class AnthropicLlm implements LlmProvider {
     private callOpts: CallOptions
   ) {}
 
-  async complete(system: string, user: string, stats?: LlmCallStats): Promise<string> {
+  async complete(system: string, user: string, stats?: LlmCallStats, progress?: LlmProgress): Promise<string> {
     const body = {
       model: this.model,
       max_tokens: this.maxTokens,
@@ -268,7 +297,8 @@ class AnthropicLlm implements LlmProvider {
                 .join(""),
               inputTokens: data?.usage?.input_tokens,
               outputTokens: data?.usage?.output_tokens,
-            })
+            }),
+            progress
           ),
         { maxRetries: this.callOpts.maxRetries }
       );

@@ -1,6 +1,7 @@
-import { Plugin } from "obsidian";
+import { Plugin, TFile } from "obsidian";
 import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
 import { startSegment, stopSegment } from "./commands/recordSegment";
+import { isTranscriptNote, summarizeFromNote } from "./commands/summarizeNote";
 import { importAudioFlow } from "./ui/filePicker";
 import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
@@ -45,6 +46,27 @@ export default class GijiPlugin extends Plugin {
       name: "导入音频生成会议纪要",
       callback: () => importAudioFlow(this.app, this.settings, this.manifest.dir),
     });
+
+    // 録音MD の右クリックメニューに「議事録要約」を追加
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || !isTranscriptNote(this.app, file)) return;
+        menu.addItem((item) =>
+          item
+            .setTitle("議事録要約")
+            .setIcon("file-text")
+            .onClick(() => {
+              void summarizeFromNote(
+                this.app,
+                this.settings,
+                this.manifest.dir ?? "",
+                file,
+                this.recordingTimer
+              );
+            })
+        );
+      })
+    );
   }
 
   async loadSettings() {
