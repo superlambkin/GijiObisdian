@@ -1,6 +1,6 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
-import { SegmentRecorder } from "../audio/recorder";
+import { SegmentRecorder, SegmentResult } from "../audio/recorder";
 import { appendSegmentNote } from "../notes/generator";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { runAutoSummarize } from "./autoSummarize";
@@ -25,7 +25,13 @@ export async function startSegment(app: App, settings: GijiSettings, timer?: Rec
 export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
   timer?.setTranscribing(); // 録音停止 → 文字起こし中
   const r = getRecorder(app);
-  const result = await r.stop(settings);
+  let result: SegmentResult | null;
+  try {
+    result = await r.stop(settings);
+  } catch (err) {
+    timer?.stop(); // 例外時もタイマーを非表示に戻す
+    throw err;
+  }
   if (result === null) {
     timer?.stop();
     new Notice("⚠️ 進行中の録音がありません");
