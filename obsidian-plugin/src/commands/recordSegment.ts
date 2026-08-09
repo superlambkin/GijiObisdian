@@ -2,6 +2,7 @@ import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { appendSegmentNote } from "../notes/generator";
+import { buildMp3Links } from "../notes/mp3Ref";
 import { runAutoSummarize } from "./autoSummarize";
 import { RecordingTimer } from "../ui/recordingTimer";
 
@@ -22,10 +23,11 @@ export async function startSegment(app: App, settings: GijiSettings, timer?: Rec
 }
 
 export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
-  timer?.stop();
+  timer?.setTranscribing(); // 録音停止 → 文字起こし中
   const r = getRecorder(app);
   const result = await r.stop(settings);
   if (result === null) {
+    timer?.stop();
     new Notice("⚠️ 進行中の録音がありません");
     return;
   }
@@ -33,15 +35,22 @@ export async function stopSegment(app: App, settings: GijiSettings, manifestDir:
   const view = app.workspace.getActiveViewOfType(Object as any) as any;
   const editor = view?.editor;
   if (!editor) {
+    timer?.stop();
     new Notice("⚠️ 転写を追記する前にノートを開いてください");
     return;
   }
-  const now = new Date();
-  const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  const startTime = result.startTime ?? new Date();
+  const time = `${startTime.getHours().toString().padStart(2, "0")}:${startTime.getMinutes().toString().padStart(2, "0")}`;
   const cur = editor.getValue();
   editor.setValue(appendSegmentNote(cur, `${time}`, result.text));
   new Notice("✅ ノートに転写を追記しました");
 
-  // 議事録の自動生成（fire-and-forget。内部で Notice 表示）
-  void runAutoSummarize(result.text, settings, app, manifestDir);
+  // 議事録の自動生成（要約中表示 → 完了で非表示）
+  timer?.setSummarizing();
+  const mp3Links = buildMp3Links(result.audioPaths ?? []);
+  void runAutoSummarize(result.text, settings, app, manifestDir, {
+    startTime,
+    durationSec: result.durationSec,
+    mp3Links,
+  }).finally(() => timer?.stop());
 }
