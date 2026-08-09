@@ -157,9 +157,12 @@ export async function runAutoSummarize(
         }
         await (app.vault.adapter as any).write(opts.overwritePath, out);
       } catch (e) {
+        // === UAT 診断：write/read/同定失敗時の追加情報をログ ===
+        const msg = (e as Error).message;
+        const stack = (e as Error)?.stack?.split("\n").slice(0, 3).join(" | ") ?? "";
+        await emitSummarizeLog("fail", `error="overwrite_diag path=${opts.overwritePath} msg=${(msg || "").replace(/"/g, "'")} stack=${stack.replace(/"/g, "'")}"`);
         // TOCTOU 対策：上書きブロック全体を try/catch で包み、失敗時は既存ファイルを
         // 変更せずに Notice で明示する（生成失敗と区別する文言）。
-        const msg = (e as Error).message;
         new Notice(`⚠️ 議事録の上書きに失敗しました: ${msg}`);
         await emitSummarizeLog("fail", `error="overwrite_failed: ${(msg || "").replace(/"/g, "'")}"`);
         return { ok: false, error: msg };
