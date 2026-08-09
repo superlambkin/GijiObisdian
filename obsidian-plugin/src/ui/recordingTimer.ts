@@ -46,4 +46,22 @@ export class RecordingTimer {
     }
     this.el.hide();
   }
+
+  setTranscribing(): void {
+    if (this.intervalId !== null) {
+      this.deps.clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    this.el.setText("📝 文字起こし中…");
+    this.el.show();
+  }
+
+  setSummarizing(): void {
+    if (this.intervalId !== null) {
+      this.deps.clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    this.el.setText("🤖 要約生成中…");
+    this.el.show();
+  }
 }

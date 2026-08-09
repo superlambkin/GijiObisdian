@@ -86,3 +86,29 @@ test("double start is ignored", () => {
   assert.equal(el.getText(), "🎙️ 00:10");
   assert.equal(fake.handlerCount(), 1);
 });
+
+test("setTranscribing clears interval and shows 文字起こし中", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.start();
+  fake.setNow(30_000);
+  fake.fire();
+  timer.setTranscribing();
+  assert.equal(timer.isRunning(), false);
+  assert.equal(el.getText(), "📝 文字起こし中…");
+  assert.equal(el.isVisible(), true);
+  assert.equal(fake.handlerCount(), 0);
+});
+
+test("setSummarizing clears interval and shows 要約生成中", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.start();
+  timer.setSummarizing();
+  assert.equal(timer.isRunning(), false);
+  assert.equal(el.getText(), "🤖 要約生成中…");
+  assert.equal(el.isVisible(), true);
+  assert.equal(fake.handlerCount(), 0);
+});
