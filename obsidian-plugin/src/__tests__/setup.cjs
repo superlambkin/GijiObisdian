@@ -36,6 +36,11 @@ Module._load = function (request, parent, isMain) {
       Notice: class {
         constructor(_message) {}
       },
+      Modal: class {
+        constructor(_app) {}
+        open() {}
+        close() {}
+      },
     };
   }
   return originalLoad(request, parent, isMain);
