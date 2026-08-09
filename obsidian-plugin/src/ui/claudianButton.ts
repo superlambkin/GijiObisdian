@@ -228,7 +228,10 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         btn.textContent = "🎙️";
         btn.classList.remove("giji-recording");
         state.recorder = new SegmentRecorder(plugin.app);
-        if (!text) return;
+        if (!text) {
+          timer?.stop(); // 転写が空・録音なし時もタイマーを非表示に戻す
+          return;
+        }
 
         // 転写保存（任意）+ 議事録の自動生成（要約）
         timer?.setSummarizing(); // 要約生成中
