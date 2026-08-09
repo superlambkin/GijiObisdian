@@ -5,6 +5,7 @@ import { importAudioFlow } from "./ui/filePicker";
 import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
 import { RecordingTimer } from "./ui/recordingTimer";
+import { injectRecordingStyles } from "./ui/recordingStyles";
 
 const STT_PROVIDERS = ["openai", "google", "groq"];
 const LLM_PROVIDERS = ["claudian", "cloud", "ollama"];
@@ -19,6 +20,7 @@ export default class GijiPlugin extends Plugin {
     // テンプレートフォルダをインストール先に作成し、デフォルトテンプレートを格納
     await ensureTemplatesDir(this.app, this.manifest.dir);
 
+    injectRecordingStyles();
     this.recordingTimer = new RecordingTimer(this.addStatusBarItem());
     this.register(() => this.recordingTimer.stop());
 
