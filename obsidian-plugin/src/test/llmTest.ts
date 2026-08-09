@@ -54,6 +54,7 @@ export async function runLlmTest(
     parts.push(`msg=${e?.message ?? String(e)}`);
     if (e?.code) parts.push(`code=${e.code}`);
     if (e?.cause) parts.push(`cause=${e.cause?.message ?? String(e.cause)}`);
+    parts.push(`transport=${(fetchImpl as any)?.transportName ?? "custom"}`);
     const stack = e?.stack?.split("\n").slice(0, 5).join(" | ") ?? "";
     if (stack) parts.push(`stack=${stack}`);
     return { ok: false, error: parts.join("\n") };

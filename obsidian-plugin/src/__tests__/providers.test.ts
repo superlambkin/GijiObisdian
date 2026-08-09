@@ -361,35 +361,32 @@ test("unknown llmProvider throws", () => {
 });
 
 // api.kimi.com 等 CORS 非対応エンドポイント対策:
-// Obsidian デスクトップ（Electron）では net.fetch（CORS 非適用・SSE 対応）を既定にし、
-// それ以外（モバイル/テスト）では globalThis.fetch にフォールバックする。
-test("getDefaultFetch prefers electron net.fetch when available (CORS bypass)", async () => {
+// Node http/https 直接接続（curl 同等: CORS なし・システムプロキシ非経由）を既定にし、
+// require が使えない環境（モバイル/テスト）では globalThis.fetch にフォールバックする。
+// transportName タグで実機の使用トランスポートを診断可能にする。
+test("getDefaultFetch prefers node-direct transport when node require is available", async () => {
   const { getDefaultFetch } = await import("../providers/llm");
-  let called = 0;
-  const electronFetch = (async () => {
-    called++;
-    return { ok: true } as any;
-  }) as any;
+  const { createRequire } = await import("node:module");
   const g = globalThis as any;
   const prev = g.require;
-  g.require = (name: string) => (name === "electron" ? { net: { fetch: electronFetch } } : undefined);
+  g.require = createRequire(import.meta.url);
   try {
-    const f = getDefaultFetch();
+    const f = getDefaultFetch() as any;
     assert.equal(typeof f, "function");
-    await f("https://api.kimi.com/coding/v1/chat/completions");
-    assert.equal(called, 1); // electron の net.fetch が使われた
+    assert.equal(f.transportName, "node-direct");
   } finally {
     if (prev === undefined) delete g.require;
     else g.require = prev;
   }
 });
 
-test("getDefaultFetch falls back to global fetch when electron is unavailable", async () => {
+test("getDefaultFetch falls back to window fetch when node require is unavailable", async () => {
   const { getDefaultFetch } = await import("../providers/llm");
   // Node テスト環境では globalThis.require は存在しない
   assert.equal((globalThis as any).require, undefined);
-  const f = getDefaultFetch();
+  const f = getDefaultFetch() as any;
   assert.equal(typeof f, "function");
+  assert.equal(f.transportName, "window-fetch");
 });
 
 function makeSseBody(events: string[]): ReadableStream<Uint8Array> {

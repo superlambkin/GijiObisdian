@@ -1,5 +1,6 @@
 import { GijiSettings } from "../settings";
 import { getPreset } from "./llmPresets";
+import { createNodeFetch } from "./nodeFetch";
 
 /** LLM 呼び出しの計測結果（complete() の stats 引数に書き戻す） */
 export interface LlmCallStats {
@@ -334,21 +335,22 @@ function nonNegativeInt(v: unknown, fallback: number): number {
 
 /**
  * 既定の fetch 実装を解決する。
- * - Obsidian デスクトップ（Electron）: net.fetch を返す。
- *   レンダラーの fetch と違い CORS を適用されないため、api.kimi.com のような
- *   CORS 非対応エンドポイントにも到達できる。SSE ストリーミングにも対応
- *   （Obsidian requestUrl はストリーミング非対応のため不採用）。
+ * - Obsidian デスクトップ（nodeIntegration あり）: Node http/https 直接接続。
+ *   レンダラーの fetch は CORS で api.kimi.com 等に到達できず、Electron net.fetch は
+ *   システムプロキシの影響を受けるため（UAT 2026-08-10 で実証）、curl 同等の
+ *   Node スタックを既定とする。SSE ストリーミング対応。
  * - モバイル / テスト環境: globalThis.fetch にフォールバック。
+ * - transportName タグ: 実機でどの経路を使ったか診断するための識別子。
  */
 export function getDefaultFetch(): typeof fetch {
-  try {
-    const req = (globalThis as any).require;
-    const net = req?.("electron")?.net;
-    if (net?.fetch) return net.fetch.bind(net) as unknown as typeof fetch;
-  } catch {
-    /* Electron 不在（モバイル/テスト）はフォールバック */
+  const nodeFetch = createNodeFetch();
+  if (nodeFetch) {
+    (nodeFetch as any).transportName = "node-direct";
+    return nodeFetch as unknown as typeof fetch;
   }
-  return fetch.bind(globalThis);
+  const f = fetch.bind(globalThis) as any;
+  f.transportName = "window-fetch";
+  return f as typeof fetch;
 }
 
 export function createLlmProvider(

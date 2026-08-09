@@ -108,6 +108,16 @@ test("MiniMax: empty api key returns hint", async () => {
   assert.match(res.error ?? "", /请先填写 LLM API Key/);
 });
 
+// 実機 UAT で「どのトランスポートで失敗したか」を特定するための診断情報
+test("failure diagnostics include transport name", async () => {
+  const failing = (async () => {
+    throw new TypeError("Failed to fetch");
+  }) as any;
+  const res = await runLlmTest(cloudBase, undefined, failing);
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /transport=custom/);
+});
+
 test("claudian: realclaudian plugin with full api is detected ok", async () => {
   const fakeApp = {
     plugins: {
