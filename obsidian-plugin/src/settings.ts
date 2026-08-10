@@ -105,7 +105,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmMaxRetries: 2,
   llmAdvancedOpen: false,
   llmApiFormatOverride: false,
-  llmThinkingEnabled: true,
+  llmThinkingEnabled: false,
   llmProviderProfiles: {},
   debugLog: true,
   autoSummarizeEnabled: true,
@@ -544,9 +544,9 @@ export class GijiSettingsTab extends PluginSettingTab {
     if (s.llmAdvancedOpen) {
       new Setting(content)
         .setName("🧠 Thinking（推論）")
-        .setDesc("ON: 思考してから回答（時間がかかる・高品質）。OFF: 直接回答（高速）。DeepSeek 等の thinking モデルで比較できます")
+        .setDesc("OFF（デフォルト）: 直接回答（高速）。ON: 思考してから回答（時間がかかる・高品質）。DeepSeek 等の thinking モデルで比較できます")
         .addToggle((t) =>
-          t.setValue(s.llmThinkingEnabled !== false).onChange(async (v: boolean) => {
+          t.setValue(s.llmThinkingEnabled === true).onChange(async (v: boolean) => {
             s.llmThinkingEnabled = v;
             await this.save();
           })

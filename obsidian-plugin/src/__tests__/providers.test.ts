@@ -266,7 +266,7 @@ test("deepseek: thinking disabled なら body.thinking = {type:disabled}", async
   assert.deepEqual(capturedBody.thinking, { type: "disabled" });
 });
 
-test("deepseek: thinking enabled（デフォルト）なら body.thinking を含まない", async () => {
+test("deepseek: thinking enabled なら body.thinking を含まない", async () => {
   let capturedBody: any = null;
   const fakeFetch = (async (_url: string, init: any) => {
     capturedBody = JSON.parse(init.body);
@@ -284,6 +284,7 @@ test("deepseek: thinking enabled（デフォルト）なら body.thinking を含
       llmApiKey: "k",
       llmBaseUrl: "",
       llmModel: "",
+      llmThinkingEnabled: true,
     },
     fakeFetch
   );

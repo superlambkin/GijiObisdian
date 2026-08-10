@@ -44,7 +44,7 @@ test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
   assert.equal(DEFAULT_SETTINGS.llmMaxTokens, 32000);
   assert.equal(DEFAULT_SETTINGS.llmAdvancedOpen, false);
   assert.equal(DEFAULT_SETTINGS.llmApiFormatOverride, false);
-  assert.equal(DEFAULT_SETTINGS.llmThinkingEnabled, true);
+  assert.equal(DEFAULT_SETTINGS.llmThinkingEnabled, false);
 });
 
 test("isBridgeSettingDisabled", () => {

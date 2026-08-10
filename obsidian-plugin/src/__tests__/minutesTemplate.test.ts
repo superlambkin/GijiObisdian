@@ -91,7 +91,7 @@ test("buildClaudianMinutesPrompt embeds template, transcript, startTime and 録�
 });
 
 test("DEFAULT_MINUTES_TEMPLATE_MD includes 録音ファイル row", () => {
-  assert.match(DEFAULT_MINUTES_TEMPLATE_MD, /\| 🎙️ 録音ファイル \|/);
+  assert.match(DEFAULT_MINUTES_TEMPLATE_MD, /🎙️ \*\*録音ファイル\*\*:/);
 });
 
 test("buildTemplateSystemPrompt embeds template", () => {
