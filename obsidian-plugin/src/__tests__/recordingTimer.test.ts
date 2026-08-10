@@ -122,12 +122,15 @@ test("setSummarizing shows 要約生成中 with elapsed time and ticks", () => {
   assert.equal(el.getText(), "📡 接続中… 01:35");
 });
 
-test("llmModelLabel: claudian は Claudian、他は llmModel", () => {
+test("llmModelLabel: プリセットの短縮名を返す", () => {
   assert.equal(llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "claudian" }), "Claudian");
   assert.equal(
     llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "deepseek", llmModel: "deepseek-v4-flash" }),
-    "deepseek-v4-flash"
+    "DeepSeek"
   );
+  assert.equal(llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "kimi" }), "Kimi");
+  assert.equal(llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "kimi-coding" }), "KimiC");
+  assert.equal(llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "openai" }), "OpenAI");
 });
 
 test("setSummarizing(model) はステータスバーにモデル名を表示する", () => {

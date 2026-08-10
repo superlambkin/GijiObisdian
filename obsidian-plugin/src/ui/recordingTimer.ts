@@ -7,10 +7,22 @@ export function formatElapsed(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-/** 要約に使う LLM モデルの表示名（ステータスバー表示用） */
+/** 要約に使う LLM モデルの短縮表示名（ステータスバー表示用） */
 export function llmModelLabel(settings: GijiSettings): string {
-  if (settings.llmProvider === "claudian") return "Claudian";
-  return settings.llmModel || settings.llmProvider;
+  const short: Record<string, string> = {
+    claudian: "Claudian",
+    deepseek: "DeepSeek",
+    MiniMax: "MiniMax",
+    kimi: "Kimi",
+    "kimi-coding": "KimiC",
+    openai: "OpenAI",
+    claude: "Claude",
+    gemini: "Gemini",
+    ollama: "Ollama",
+    cloud: "Cloud",
+    custom: "Custom",
+  };
+  return short[settings.llmProvider] ?? (settings.llmModel || settings.llmProvider);
 }
 
 export interface RecordingTimerDeps {
