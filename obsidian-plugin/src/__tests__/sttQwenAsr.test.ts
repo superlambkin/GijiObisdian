@@ -54,3 +54,16 @@ test("qwen3-asr surfaces HTTP error", async () => {
   );
   await assert.rejects(() => p.transcribe(new ArrayBuffer(10), "auto"), /STT 500/);
 });
+
+test("qwen3-asr surfaces friendly error on network rejection", async () => {
+  const p = createSttProvider(
+    base,
+    (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch
+  );
+  await assert.rejects(
+    () => p.transcribe(new ArrayBuffer(10), "auto"),
+    /start_qwen3_asr\.bat/
+  );
+});

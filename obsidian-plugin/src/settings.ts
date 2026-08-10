@@ -50,6 +50,8 @@ export interface GijiSettings {
   sttApiKey: string;
   /** 🔜 qwen3-asr ローカルサーバ URL（既定 http://127.0.0.1:9000/v1） */
   sttBaseUrl: string;
+  /** 🔜 ローカル ASR サーバのディレクトリ（自動起動用） */
+  sttServerDir: string;
   /** 🔜 qwen3-asr モデル名（既定 qwen3-asr-0.6b） */
   sttModel: string;
   sttLang: SttLang;
@@ -113,6 +115,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "qwen3-asr",
   sttApiKey: "",
   sttBaseUrl: "http://127.0.0.1:9000/v1",
+  sttServerDir: "D:\\AI-Agent\\giji-obsidian\\qwen3-asr-server",
   sttModel: "qwen3-asr-0.6b",
   sttLang: "auto",
   sttProviderProfiles: {},

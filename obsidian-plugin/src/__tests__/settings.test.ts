@@ -26,6 +26,7 @@ test("DEFAULT_SETTINGS has required fields", () => {
 
 test("DEFAULT_SETTINGS includes qwen3-asr fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
+  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\giji-obsidian\\qwen3-asr-server");
   assert.equal(DEFAULT_SETTINGS.sttModel, "qwen3-asr-0.6b");
 });
 

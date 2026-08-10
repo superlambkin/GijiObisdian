@@ -1,5 +1,6 @@
 import { GijiSettings, isLocalSttProvider } from "../settings";
 import { createSttProvider } from "../providers/stt";
+import { ensureLocalAsrServer } from "../qwen3AsrLauncher";
 import { decodeTestAudio } from "./audioSample";
 
 export interface SttTestResult {
@@ -18,6 +19,7 @@ export async function runSttTest(
   }
   try {
     const provider = createSttProvider(settings, fetchImpl);
+    await ensureLocalAsrServer(settings, { fetchImpl });
     const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
     if (!text.trim()) return { ok: false, error: "请求成功但未识别出文本" };
     return { ok: true, text };

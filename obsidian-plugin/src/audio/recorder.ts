@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { GijiSettings } from "../settings";
 import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
+import { ensureLocalAsrServer } from "../qwen3AsrLauncher";
 import { renderTemplate } from "../notes/saver";
 import { writeDebugLog } from "../util/debugLog";
 import { splitForTranscription } from "./chunker";
@@ -103,6 +104,7 @@ export class SegmentRecorder {
     let sttChunks = 0;
     try {
       const stt = createSttProvider(settings);
+      await ensureLocalAsrServer(settings);
       const parts: string[] = [];
       for (const path of paths) {
         const buf = await this.readAudioFile(path);

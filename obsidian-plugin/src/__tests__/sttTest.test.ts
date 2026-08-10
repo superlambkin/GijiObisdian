@@ -41,11 +41,17 @@ test("transcribe success returns text", async () => {
 });
 
 test("transcribe http error surfaces status", async () => {
-  const fetchImpl = (async () => ({
-    ok: false,
-    status: 401,
-    text: async () => "invalid api key",
-  })) as any;
+  // 自動起動ヘルスチェック（/health）は OK、転写エンドポイントのみ 401 を返す
+  const fetchImpl = (async (url: string) => {
+    if (url.endsWith("/health")) {
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    return {
+      ok: false,
+      status: 401,
+      text: async () => "invalid api key",
+    };
+  }) as any;
   const res = await runSttTest(base, fetchImpl);
   assert.equal(res.ok, false);
   assert.match(res.error ?? "", /401/);

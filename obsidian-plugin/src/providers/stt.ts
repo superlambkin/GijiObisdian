@@ -74,10 +74,17 @@ class Qwen3AsrStt implements SttProvider {
     const l = this.langName(lang);
     if (l) form.append("language", l);
 
-    const res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
-      method: "POST",
-      body: form as any,
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
+        method: "POST",
+        body: form as any,
+      });
+    } catch {
+      throw new Error(
+        `ローカル ASR サーバに接続できません（${this.baseUrl}）。start_qwen3_asr.bat で起動してください`
+      );
+    }
     if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`);
     const data = await res.json();
     return data.text ?? "";
@@ -117,10 +124,17 @@ class WhisperLocalStt implements SttProvider {
     const l = this.langName(lang);
     if (l) form.append("language", l);
 
-    const res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
-      method: "POST",
-      body: form as any,
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
+        method: "POST",
+        body: form as any,
+      });
+    } catch {
+      throw new Error(
+        `ローカル ASR サーバに接続できません（${this.baseUrl}）。start_qwen3_asr.bat で起動してください`
+      );
+    }
     if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`);
     const data = await res.json();
     return data.text ?? "";

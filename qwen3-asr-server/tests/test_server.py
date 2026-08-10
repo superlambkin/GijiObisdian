@@ -31,6 +31,12 @@ else:
     client = None
 
 
+def test_health():
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
 def test_transcriptions_returns_text():
     with FIXTURE.open("rb") as f:
         resp = client.post(

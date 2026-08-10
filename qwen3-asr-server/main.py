@@ -15,12 +15,17 @@ app = FastAPI(title="qwen3-asr-server", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["app://obsidian.md", "http://localhost", "http://127.0.0.1"],
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
 engine = AsrEngine()
 whisper_engine = WhisperEngine()  # 遅延ロード（モデルは初回 transcribe 時に読込）
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": "0.1.0"}
 
 
 def _pick_engine(model: str | None):
