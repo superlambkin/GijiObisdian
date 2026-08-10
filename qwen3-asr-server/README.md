@@ -143,6 +143,20 @@ curl -s -X POST http://127.0.0.1:9000/v1/audio/transcriptions \
 
 ---
 
+## モデル切替（Qwen3-ASR / Whisper-small）
+
+`POST /v1/audio/transcriptions` の `model` フィールドでエンジンを切替：
+
+| model | エンジン | 備考 |
+|-------|---------|------|
+| `qwen3-asr-0.6b` | Qwen3-ASR（ONNX-CPU） | 既定・議事録向け |
+| `whisper-small` | openai-whisper small（CPU torch） | 速度優先・下書き向け |
+
+Whisper を使うには追加で `openai-whisper` と CPU 版 torch（~2GB）の導入が必要。
+初回転写時は whisper-small モデル（~460MB）を自動ダウンロードする。
+
+---
+
 ## プラグイン側の設定
 
 GijiObsidian の設定 → ② 文字起こし → STT プロバイダーで
