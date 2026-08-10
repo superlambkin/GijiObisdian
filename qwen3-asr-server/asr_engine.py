@@ -36,3 +36,34 @@ class AsrEngine:
 
     def transcribe(self, audio_path: str, language: str | None = None) -> dict:
         return self._pipeline.transcribe(audio_path, language=language, chunk_sec=30)
+
+
+class WhisperEngine:
+    """openai-whisper small（CPU torch）を遅延ロードするエンジン。"""
+
+    _LANG_MAP = {"Chinese": "zh", "Japanese": "ja", "English": "en"}
+
+    def __init__(self) -> None:
+        self._model = None
+
+    def _ensure_model(self):
+        if self._model is not None:
+            return
+        try:
+            import whisper
+        except ImportError as exc:
+            raise ImportError(
+                "openai-whisper / torch が導入されていません。"
+                "README に従って pip install openai-whisper と CPU 版 torch を導入してください。"
+            ) from exc
+        self._model = whisper.load_model("small")
+
+    def _lang_code(self, language: str | None) -> str | None:
+        if not language:
+            return None
+        return self._LANG_MAP.get(language, language)
+
+    def transcribe(self, audio_path: str, language: str | None = None) -> dict:
+        self._ensure_model()
+        result = self._model.transcribe(audio_path, language=self._lang_code(language))
+        return {"text": result.get("text", "").strip()}

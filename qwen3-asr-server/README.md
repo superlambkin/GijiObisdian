@@ -4,8 +4,8 @@
 `POST /v1/audio/transcriptions` を公開し、GijiObsidian プラグインの
 STT プロバイダー「Qwen3-ASR（ローカル）」から利用します。
 
-- モデル: [Daumee/Qwen3-ASR-0.6B-ONNX-CPU](https://huggingface.co/Daumee/Qwen3-ASR-0.6B-ONNX-CPU)
-- 推論: ONNX Runtime CPU（GPU 不要・API キー不要）
+- モデル: [Daumee/Qwen3-ASR-0.6B-ONNX-CPU](https://huggingface.co/Daumee/Qwen3-ASR-0.6B-ONNX-CPU)（既定）＋ **openai-whisper small**（`model=whisper-small` で切替）
+- 推論: ONNX Runtime CPU / whisper（CPU torch。GPU 不要・API キー不要）
 - ポート: `http://127.0.0.1:9000`
 
 ---
@@ -52,6 +52,20 @@ pip install -r requirements.txt
 ```
 
 必要ならテスト用に `pip install pytest` も入れてください。
+
+### 4. whisper-small を利用する場合（任意）
+
+`model=whisper-small` で openai-whisper small エンジンを利用できます。
+CPU 版 torch + openai-whisper の導入容量は約 **2 GB** です（初回は明示導入が必要）。
+
+```bash
+source .venv/Scripts/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install openai-whisper
+```
+
+> 💡 whisper のモデルは **初回 transcribe 時に自動ダウンロード**（約 460 MB）され、以後キャッシュされます。
+> whisper 未導入の環境では `model=whisper-small` を指定すると 500 エラーになります。
 
 ---
 
@@ -103,7 +117,7 @@ OpenAI の Whisper API と互換の multipart/form-data を受け取ります。
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|:---:|------|
 | `file` | バイナリ | ✅ | 音声ファイル（WAV / MP3 等）。`audio.wav` / `audio.mp3` のファイル名を推奨 |
-| `model` | 文字列 | 任意 | モデル名（例: `qwen3-asr-0.6b`）。未指定でも動作 |
+| `model` | 文字列 | 任意 | モデル名。`qwen3-asr-0.6b`（既定）/ `whisper-small`。未指定なら既定の Qwen3-ASR で動作 |
 | `language` | 文字列 | 任意 | `Chinese` / `Japanese` / `English`。省略で自動検出 |
 
 **成功レスポンス（200）**:

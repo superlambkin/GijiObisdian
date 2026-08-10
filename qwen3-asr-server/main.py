@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from asr_engine import AsrEngine
+from asr_engine import AsrEngine, WhisperEngine
 
 app = FastAPI(title="qwen3-asr-server", version="0.1.0")
 
@@ -20,6 +20,12 @@ app.add_middleware(
 )
 
 engine = AsrEngine()
+whisper_engine = WhisperEngine()  # 遅延ロード（モデルは初回 transcribe 時に読込）
+
+
+def _pick_engine(model: str | None):
+    """model パラメータでエンジンを選択（既定は Qwen3-ASR）。"""
+    return whisper_engine if model == "whisper-small" else engine
 
 
 @app.post("/v1/audio/transcriptions")
@@ -33,7 +39,7 @@ async def transcriptions(
         tmp = f.name
         f.write(await file.read())
     try:
-        result = engine.transcribe(tmp, language=language)
+        result = _pick_engine(model).transcribe(tmp, language=language)
         return {"text": result.get("text", "").strip()}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
