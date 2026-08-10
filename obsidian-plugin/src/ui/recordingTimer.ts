@@ -1,8 +1,16 @@
+import type { GijiSettings } from "../settings";
+
 export function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
   const ss = String(totalSec % 60).padStart(2, "0");
   return `${mm}:${ss}`;
+}
+
+/** 要約に使う LLM モデルの表示名（ステータスバー表示用） */
+export function llmModelLabel(settings: GijiSettings): string {
+  if (settings.llmProvider === "claudian") return "Claudian";
+  return settings.llmModel || settings.llmProvider;
 }
 
 export interface RecordingTimerDeps {
@@ -29,6 +37,7 @@ export class RecordingTimer {
   private deps: Required<Pick<RecordingTimerDeps, "setInterval" | "clearInterval" | "now">>;
   private summarizeStage: SummarizeStage = "connecting";
   private summarizeChars: number | null = null;
+  private summarizeModel: string | null = null;
 
   constructor(private el: HTMLElement, deps: RecordingTimerDeps = {}) {
     this.el.hide();
@@ -57,11 +66,12 @@ export class RecordingTimer {
 
   private summarizeLabel(): string {
     const base = SUMMARIZE_LABELS[this.summarizeStage];
+    const model = this.summarizeModel ? `（${this.summarizeModel}）` : "";
     const chars =
       this.summarizeStage === "generating" && this.summarizeChars !== null
         ? ` ${this.summarizeChars.toLocaleString()}字`
         : "";
-    return `${base}${chars}`;
+    return `${base}${model}${chars}`;
   }
 
   private render(): void {
@@ -97,8 +107,9 @@ export class RecordingTimer {
     this.el.show();
   }
 
-  setSummarizing(): void {
+  setSummarizing(model?: string): void {
     // 要約開始時は接続待ち（TTFB）から表示
+    this.summarizeModel = model ?? null;
     this.summarizeStage = "connecting";
     this.summarizeChars = null;
     this.startTicking("summarizing");

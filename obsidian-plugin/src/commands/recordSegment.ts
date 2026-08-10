@@ -4,7 +4,7 @@ import { SegmentRecorder, SegmentResult } from "../audio/recorder";
 import { appendSegmentNote } from "../notes/generator";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { runAutoSummarize } from "./autoSummarize";
-import { RecordingTimer } from "../ui/recordingTimer";
+import { RecordingTimer, llmModelLabel } from "../ui/recordingTimer";
 
 let recorder: SegmentRecorder | null = null;
 
@@ -55,7 +55,7 @@ export async function stopSegment(app: App, settings: GijiSettings, manifestDir:
   );
 
   // 議事録の自動生成（要約中表示 → 完了で非表示）
-  timer?.setSummarizing();
+  timer?.setSummarizing(llmModelLabel(settings));
   const mp3Links = buildMp3Links(result.audioPaths ?? []);
   void runAutoSummarize(result.text, settings, app, manifestDir, {
     startTime,

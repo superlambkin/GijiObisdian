@@ -7,7 +7,7 @@ import { saveTranscriptToFile } from "../notes/saver";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { appendToClaudianInput } from "./claudianApi";
 import { runAutoSummarize } from "../commands/autoSummarize";
-import { RecordingTimer } from "./recordingTimer";
+import { RecordingTimer, llmModelLabel } from "./recordingTimer";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
@@ -285,7 +285,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         }
 
         // 転写保存（任意）+ 議事録の自動生成（要約）
-        timer?.setSummarizing(); // 要約生成中
+        timer?.setSummarizing(llmModelLabel(settings)); // 要約生成中（モデル名付き）
         try {
           await saveTranscriptAndAutoSummarize(plugin, settings, text, durationSec, {
             startTime,

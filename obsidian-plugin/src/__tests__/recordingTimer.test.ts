@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatElapsed, RecordingTimer, RecordingTimerDeps } from "../ui/recordingTimer";
+import {
+  formatElapsed,
+  RecordingTimer,
+  RecordingTimerDeps,
+  llmModelLabel,
+} from "../ui/recordingTimer";
+import { DEFAULT_SETTINGS } from "../settings";
 
 function makeFakeEl() {
   let text = "";
@@ -114,6 +120,24 @@ test("setSummarizing shows 要約生成中 with elapsed time and ticks", () => {
   fake.setNow(95_000);
   fake.fire();
   assert.equal(el.getText(), "📡 接続中… 01:35");
+});
+
+test("llmModelLabel: claudian は Claudian、他は llmModel", () => {
+  assert.equal(llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "claudian" }), "Claudian");
+  assert.equal(
+    llmModelLabel({ ...DEFAULT_SETTINGS, llmProvider: "deepseek", llmModel: "deepseek-v4-flash" }),
+    "deepseek-v4-flash"
+  );
+});
+
+test("setSummarizing(model) はステータスバーにモデル名を表示する", () => {
+  const el = makeFakeEl();
+  const fake = makeFakeDeps();
+  const timer = new RecordingTimer(el, fake.deps);
+  timer.setSummarizing("deepseek-v4-flash");
+  assert.equal(el.getText(), "📡 接続中…（deepseek-v4-flash） 00:00");
+  timer.updateSummarizeStage("generating", 123);
+  assert.equal(el.getText(), "✍️ 生成中…（deepseek-v4-flash） 123字 00:00");
 });
 
 test("summarizing の経過時間は setSummarizing 時点から計測される", () => {
