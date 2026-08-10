@@ -386,6 +386,7 @@ export class GijiSettingsTab extends PluginSettingTab {
         d.addOption("openai", "OpenAI（デフォルト）")
           .addOption("google", "Google")
           .addOption("groq", "Groq")
+          .addOption("qwen3-asr", "Qwen3-ASR（ローカル）")
           .setValue(s.sttProvider)
           .onChange(async (v: string) => {
             Object.assign(s, switchSttProvider(s, v as SttProviderId));
@@ -394,14 +395,36 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
       );
 
-    new Setting(content)
-      .setName("STT API キー")
-      .addText((t) =>
-        t.setValue(s.sttApiKey).onChange(async (v: string) => {
-          s.sttApiKey = v;
-          await this.save();
-        })
-      );
+    if (s.sttProvider === "qwen3-asr") {
+      new Setting(content)
+        .setName("ASR サーバ URL")
+        .setDesc("ローカル qwen3-asr サーバ（既定: http://127.0.0.1:9000/v1）")
+        .addText((t) =>
+          t.setValue(s.sttBaseUrl).onChange(async (v: string) => {
+            s.sttBaseUrl = v;
+            await this.save();
+          })
+        );
+
+      new Setting(content)
+        .setName("ASR モデル名")
+        .setDesc("サーバに送る model 名（既定: qwen3-asr-0.6b）")
+        .addText((t) =>
+          t.setValue(s.sttModel).onChange(async (v: string) => {
+            s.sttModel = v;
+            await this.save();
+          })
+        );
+    } else {
+      new Setting(content)
+        .setName("STT API キー")
+        .addText((t) =>
+          t.setValue(s.sttApiKey).onChange(async (v: string) => {
+            s.sttApiKey = v;
+            await this.save();
+          })
+        );
+    }
 
     new Setting(content)
       .setName("言語")
