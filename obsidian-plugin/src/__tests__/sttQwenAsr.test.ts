@@ -32,7 +32,7 @@ test("qwen3-asr transcribe posts to sttBaseUrl and returns text", async () => {
   assert.equal(text, "こんにちは");
 });
 
-test("qwen3-asr maps ja->Japanese and auto->no language", async () => {
+test("qwen3-asr maps ja->Japanese, zh->Chinese, en->English, auto->no language", async () => {
   const langs: Array<string | null> = [];
   const fakeFetch = (async (_url: string, init: any) => {
     const form = init.body as FormData;
@@ -41,8 +41,10 @@ test("qwen3-asr maps ja->Japanese and auto->no language", async () => {
   }) as typeof fetch;
   const p = createSttProvider(base, fakeFetch);
   await p.transcribe(new ArrayBuffer(10), "ja");
+  await p.transcribe(new ArrayBuffer(10), "zh");
+  await p.transcribe(new ArrayBuffer(10), "en");
   await p.transcribe(new ArrayBuffer(10), "auto");
-  assert.deepEqual(langs, ["Japanese", null]);
+  assert.deepEqual(langs, ["Japanese", "Chinese", "English", null]);
 });
 
 test("qwen3-asr surfaces HTTP error", async () => {

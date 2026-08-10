@@ -47,7 +47,7 @@ python -m venv .venv
 ### 3. 依存パッケージをインストール
 
 ```bash
-.venv/Scripts/activate
+source .venv/Scripts/activate
 pip install -r requirements.txt
 ```
 
@@ -70,8 +70,8 @@ pip install -r requirements.txt
 
 ```bash
 cd /d/AI-Agent/giji-obsidian/qwen3-asr-server
-.venv/Scripts/activate
-set PYTHONIOENCODING=utf-8
+source .venv/Scripts/activate
+export PYTHONIOENCODING=utf-8
 python main.py
 ```
 

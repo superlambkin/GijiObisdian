@@ -1,12 +1,7 @@
-import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-from main import app
-
-client = TestClient(app)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hello.wav"
 MODEL_DIR = Path(__file__).parent.parent / "model"
@@ -15,6 +10,16 @@ pytestmark = pytest.mark.skipif(
     not MODEL_DIR.exists() or not FIXTURE.exists(),
     reason="model or fixture not downloaded",
 )
+
+# model/ が無い環境（fresh clone）でもコレクションエラーにせず SKIP にするため、
+# app の import（main → asr_engine → onnx_inference）は MODEL_DIR が存在する場合のみ行う。
+if MODEL_DIR.exists():
+    from main import app
+
+    client = TestClient(app)
+else:
+    app = None
+    client = None
 
 
 def test_transcriptions_returns_text():

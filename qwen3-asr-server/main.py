@@ -30,8 +30,8 @@ async def transcriptions(
 ):
     suffix = Path(file.filename or "audio.wav").suffix or ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        f.write(await file.read())
         tmp = f.name
+        f.write(await file.read())
     try:
         result = engine.transcribe(tmp, language=language)
         return {"text": result.get("text", "").strip()}
