@@ -1,4 +1,4 @@
-import { GijiSettings } from "../settings";
+import { GijiSettings, isLocalSttProvider } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { decodeTestAudio } from "./audioSample";
 
@@ -12,8 +12,8 @@ export async function runSttTest(
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<SttTestResult> {
-  // qwen3-asr はローカルのため API キー不要
-  if (settings.sttProvider !== "qwen3-asr" && !settings.sttApiKey) {
+  // ローカル STT（qwen3-asr / whisper-small）は API キー不要
+  if (!isLocalSttProvider(settings.sttProvider) && !settings.sttApiKey) {
     return { ok: false, error: "请先填写 STT API Key" };
   }
   try {
