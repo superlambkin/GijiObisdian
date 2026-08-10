@@ -4,11 +4,12 @@ import {
   DEFAULT_SETTINGS,
   GijiSettingsTab,
   isBridgeSettingDisabled,
+  isLocalSttProvider,
   SETTINGS_TABS,
 } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
-  assert.equal(DEFAULT_SETTINGS.sttProvider, "openai");
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "qwen3-asr");
   assert.equal(DEFAULT_SETTINGS.sttLang, "auto");
   assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
   assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
@@ -171,4 +172,15 @@ test("LLM 接続テスト失敗時は saveSettings が呼ばれない", async ()
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("DEFAULT_SETTINGS defaults to local qwen3-asr", () => {
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "qwen3-asr");
+});
+
+test("isLocalSttProvider categorizes providers", () => {
+  assert.equal(isLocalSttProvider("qwen3-asr"), true);
+  assert.equal(isLocalSttProvider("whisper-small"), true);
+  assert.equal(isLocalSttProvider("openai"), false);
+  assert.equal(isLocalSttProvider("groq"), false);
 });

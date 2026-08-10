@@ -3,7 +3,23 @@ import { join } from "path";
 import { mkdirSync } from "fs";
 
 export type SttLang = "auto" | "zh" | "ja" | "en";
-export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr";
+export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr" | "whisper-small";
+
+/** STT カテゴリ（ローカル / クラウド）。sttProvider から導出する */
+export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["qwen3-asr", "whisper-small"];
+export const CLOUD_STT_PROVIDERS: readonly SttProviderId[] = ["openai", "google", "groq"];
+
+export const STT_PROVIDER_LABELS: Record<SttProviderId, string> = {
+  openai: "OpenAI",
+  google: "Google",
+  groq: "Groq",
+  "qwen3-asr": "Qwen3-ASR（ローカル・既定）",
+  "whisper-small": "Whisperローカル(small)",
+};
+
+export function isLocalSttProvider(p: string): boolean {
+  return (LOCAL_STT_PROVIDERS as readonly string[]).includes(p);
+}
 import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
 export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
@@ -94,7 +110,7 @@ export function isBridgeSettingDisabled(recordingMethod: string): boolean {
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
-  sttProvider: "openai",
+  sttProvider: "qwen3-asr",
   sttApiKey: "",
   sttBaseUrl: "http://127.0.0.1:9000/v1",
   sttModel: "qwen3-asr-0.6b",

@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from "../settings";
 const base = { ...DEFAULT_SETTINGS, sttApiKey: "test-key" };
 
 test("empty api key returns hint", async () => {
-  const res = await runSttTest({ ...base, sttApiKey: "" });
+  const res = await runSttTest({ ...base, sttProvider: "openai", sttApiKey: "" });
   assert.equal(res.ok, false);
   assert.match(res.error ?? "", /请先填写 STT API Key/);
 });

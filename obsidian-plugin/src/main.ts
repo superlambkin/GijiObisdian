@@ -10,7 +10,7 @@ import { injectRecordingStyles } from "./ui/recordingStyles";
 import { injectSettingsTabStyles } from "./ui/settingsTabsStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
 
-const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr"];
+const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small"];
 export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 
 export default class GijiPlugin extends Plugin {
@@ -76,7 +76,7 @@ export default class GijiPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     // 廃止・未対応プロバイダー値のマイグレーション（例: doubao / 旧デフォルト groq）
     if (!STT_PROVIDERS.includes(this.settings.sttProvider)) {
-      this.settings.sttProvider = "openai";
+      this.settings.sttProvider = "qwen3-asr";
     }
     if (!LLM_PROVIDERS.includes(this.settings.llmProvider)) {
       this.settings.llmProvider = "claudian";
