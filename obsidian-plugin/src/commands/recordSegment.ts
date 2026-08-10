@@ -61,6 +61,7 @@ export async function stopSegment(app: App, settings: GijiSettings, manifestDir:
     startTime,
     durationSec: result.durationSec,
     mp3Links,
+    sttMs: result.sttMs,
     onProgress: (p) => timer?.updateSummarizeStage(p.stage, p.receivedChars),
   }).finally(() => timer?.stop());
 }

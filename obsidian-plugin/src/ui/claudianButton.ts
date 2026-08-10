@@ -193,7 +193,8 @@ export async function saveTranscriptAndAutoSummarize(
         text,
         durationSec,
         opts.startTime ?? new Date(),
-        mp3Links
+        mp3Links,
+        opts.sttMs
       );
       new Notice(
         saved.appended
@@ -209,6 +210,7 @@ export async function saveTranscriptAndAutoSummarize(
     startTime: opts.startTime,
     durationSec,
     mp3Links,
+    sttMs: opts.sttMs,
   });
 }
 

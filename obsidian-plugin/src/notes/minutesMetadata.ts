@@ -10,6 +10,10 @@ export interface MinutesMetadata {
   startTime: Date;
   durationSec?: number;
   mp3Links?: string;
+  /** STT 転写処理時間（ms） */
+  sttMs?: number;
+  /** LLM 要約処理時間（ms） */
+  summarizeMs?: number;
 }
 
 /** 概要表の `| ラベル | ... |` セル内容を value に置換 */
@@ -18,21 +22,36 @@ function replaceCell(md: string, label: string, value: string): string {
   return md.replace(re, (_m, pre: string, post: string) => `${pre}${value}${post}`);
 }
 
+/** label 行が無ければ anchorLabel 行の直後に空行を挿入して返す */
+function ensureRowAfter(out: string, label: string, anchorLabel: string): string {
+  if (out.includes(`| ${label} |`)) return out;
+  const anchorIdx = out.indexOf(`| ${anchorLabel} |`);
+  if (anchorIdx === -1) return out;
+  const lineEnd = out.indexOf("\n", anchorIdx);
+  const insertAt = lineEnd === -1 ? out.length : lineEnd;
+  return out.slice(0, insertAt) + `\n| ${label} |  |` + out.slice(insertAt);
+}
+
 /** 議事録MDの概要表セルに録音データを書き込む（LLM出力の後処理） */
 export function fillMinutesMetadata(md: string, meta: MinutesMetadata): string {
   let out = md;
-  // 🎙️ 録音ファイル 行が無ければ 会議時間 行の直後に挿入
-  if (!out.includes("| 🎙️ 録音ファイル |")) {
-    const durIdx = out.indexOf("| ⏱️ 会議時間 |");
-    if (durIdx !== -1) {
-      const lineEnd = out.indexOf("\n", durIdx);
-      const insertAt = lineEnd === -1 ? out.length : lineEnd;
-      out = out.slice(0, insertAt) + "\n| 🎙️ 録音ファイル |  |" + out.slice(insertAt);
-    }
-  }
+  // 録音ファイル・文字起こし時間・要約時間 行が無ければ挿入（会議時間の直後）
+  out = ensureRowAfter(out, "🎙️ 録音ファイル", "⏱️ 会議時間");
+  out = ensureRowAfter(out, "⏱️ 文字起こし時間", "⏱️ 会議時間");
+  out = ensureRowAfter(out, "⏱️ 要約時間", "⏱️ 文字起こし時間");
   out = replaceCell(out, "🕐 開始時間", formatStartTime(meta.startTime));
   out = replaceCell(out, "⏱️ 会議時間", meta.durationSec !== undefined ? formatDuration(meta.durationSec) : "—");
   out = replaceCell(out, "🎙️ 録音ファイル", meta.mp3Links ?? "");
+  out = replaceCell(
+    out,
+    "⏱️ 文字起こし時間",
+    meta.sttMs !== undefined ? `${(meta.sttMs / 1000).toFixed(1)} 秒` : "—"
+  );
+  out = replaceCell(
+    out,
+    "⏱️ 要約時間",
+    meta.summarizeMs !== undefined ? `${Math.round(meta.summarizeMs / 1000)} 秒` : "—"
+  );
   return out;
 }
 

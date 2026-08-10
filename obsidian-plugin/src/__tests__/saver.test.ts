@@ -86,6 +86,16 @@ test("renderTranscriptNote shows — when duration unknown", () => {
   assert.match(md, /会議時間 \| —/);
 });
 
+test("renderTranscriptNote records 文字起こし時間 when sttMs provided", () => {
+  const md = renderTranscriptNote("t", FIXED, "abc", 10, "Clippings/x.md", undefined, 20300);
+  assert.match(md, /文字起こし時間 \| 20\.3 秒/);
+});
+
+test("renderTranscriptNote shows — for 文字起こし時間 when sttMs unknown", () => {
+  const md = renderTranscriptNote("t", FIXED, "abc", 10, "Clippings/x.md");
+  assert.match(md, /文字起こし時間 \| —/);
+});
+
 test("renderTranscriptNote ends with 更新記録 initial entry", () => {
   const md = renderTranscriptNote("t", FIXED, "abc", 10, "Clippings/x.md");
   assert.match(md, /## 📝 更新記録/);

@@ -48,6 +48,29 @@ test("fillMinutesMetadata inserts 録音ファイル row when missing", () => {
   assert.match(out, /\| 🎙️ 録音ファイル \| LINK \|/);
 });
 
+test("fillMinutesMetadata records 文字起こし時間/要約時間", () => {
+  const out = fillMinutesMetadata(TPL, {
+    startTime: START,
+    durationSec: 83,
+    sttMs: 20300,
+    summarizeMs: 45000,
+  });
+  assert.match(out, /\| ⏱️ 文字起こし時間 \| 20\.3 秒 \|/);
+  assert.match(out, /\| ⏱️ 要約時間 \| 45 秒 \|/);
+});
+
+test("fillMinutesMetadata inserts 文字起こし時間/要約時間 rows and shows — when unknown", () => {
+  const withoutRows = [
+    "| 🔢 議事録番号 |  |",
+    "| 🕐 開始時間 | YYYY-MM-DD HH:MM |",
+    "| ⏱️ 会議時間 | X 分 Y 秒 |",
+    "| テーマ |  |",
+  ].join("\n");
+  const out = fillMinutesMetadata(withoutRows, { startTime: START, durationSec: 5 });
+  assert.match(out, /\| ⏱️ 文字起こし時間 \| — \|/);
+  assert.match(out, /\| ⏱️ 要約時間 \| — \|/);
+});
+
 test("fillMinutesMetadata leaves rows intact when table missing", () => {
   const noTable = "# 議事録\n本文のみ";
   const out = fillMinutesMetadata(noTable, { startTime: START });

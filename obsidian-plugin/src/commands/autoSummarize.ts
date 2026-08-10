@@ -30,6 +30,8 @@ export interface AutoSummarizeOptions {
   startTime?: Date;
   durationSec?: number;
   mp3Links?: string;
+  /** STT 転写処理時間（ms）。議事録 MD の概要表に記録 */
+  sttMs?: number;
   /** 手動実行: autoSummarizeEnabled が OFF でも実行する */
   force?: boolean;
   /** 指定時は連番を作らずこのパスへ保存する（既存なら上書き） */
@@ -132,6 +134,8 @@ export async function runAutoSummarize(
       startTime,
       durationSec: opts.durationSec,
       mp3Links: opts.mp3Links,
+      sttMs: opts.sttMs,
+      summarizeMs: Date.now() - summarizeStartMs,
     });
     // 日付ハルシネーション対策：created/modified を実値で強制
     let out = enforceFrontmatterDates(finalMd, startTime, new Date());

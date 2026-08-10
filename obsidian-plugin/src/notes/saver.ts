@@ -64,7 +64,7 @@ export function formatDuration(sec: number): string {
 /**
  * 転写 MD 文書を組み立てる。
  * frontmatter は [[00_Vault管理/MD生成ルール.md]] 準拠（日本語プロパティ値）。
- * 先頭に文字数・会議時間の概要表を置く。
+ * 先頭に文字数・会議時間・文字起こし時間の概要表を置く。
  */
 export function renderTranscriptNote(
   title: string,
@@ -72,12 +72,14 @@ export function renderTranscriptNote(
   text: string,
   durationSec?: number,
   notePath?: string,
-  mp3Links?: string
+  mp3Links?: string,
+  sttMs?: number
 ): string {
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const timeHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const charCount = text.trim().length;
   const duration = durationSec === undefined ? "—" : formatDuration(durationSec);
+  const sttTime = sttMs === undefined ? "—" : `${(sttMs / 1000).toFixed(1)} 秒`;
 
   return [
     "---",
@@ -97,12 +99,13 @@ export function renderTranscriptNote(
     `# 🎙️ ${title}`,
     "",
     ...(notePath ? [`> 📂 パス：${notePath}`, ""] : []),
-    "録音の概要（文字数・会議時間・録音日時）は以下の通り。",
+    "録音の概要（文字数・会議時間・文字起こし時間・録音日時）は以下の通り。",
     "",
     "| 項目 | 値 |",
     "|------|------|",
     `| 📝 文字数 | ${charCount} 字 |`,
     `| ⏱️ 会議時間 | ${duration} |`,
+    `| ⏱️ 文字起こし時間 | ${sttTime} |`,
     `| 🕐 録音日時 | ${date} ${timeHM} |`,
     ...(mp3Links ? [`| 🎙️ 録音ファイル | ${mp3Links} |`, ""] : []),
     "",
@@ -132,12 +135,14 @@ export function buildAppendedNote(
   prev: string,
   text: string,
   durationSec: number | undefined,
-  now: Date
+  now: Date,
+  sttMs?: number
 ): string {
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const timeHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const charCount = text.trim().length;
   const duration = durationSec === undefined ? "—" : formatDuration(durationSec);
+  const sttTime = sttMs === undefined ? "—" : `${(sttMs / 1000).toFixed(1)} 秒`;
 
   // frontmatter modified を行単位で更新（他フィールドは保持）
   let out = prev.replace(/^modified: .*$/m, `modified: ${date} ${timeHM}`);
@@ -146,12 +151,13 @@ export function buildAppendedNote(
   const segment = [
     `## 🕐 追加録音（${date} ${timeHM}）`,
     "",
-    "追加録音の概要（文字数・会議時間）は以下の通り。",
+    "追加録音の概要（文字数・会議時間・文字起こし時間）は以下の通り。",
     "",
     "| 項目 | 値 |",
     "|------|------|",
     `| 📝 文字数 | ${charCount} 字 |`,
     `| ⏱️ 会議時間 | ${duration} |`,
+    `| ⏱️ 文字起こし時間 | ${sttTime} |`,
     "",
     text,
     "",
@@ -222,7 +228,8 @@ export async function saveTranscriptToFile(
   text: string,
   durationSec?: number,
   now: Date = new Date(),
-  mp3Links?: string
+  mp3Links?: string,
+  sttMs?: number
 ): Promise<{ path: string; appended: boolean }> {
   const dir = (settings.transcriptSaveDir || "").trim().replace(/^\/+|\/+$/g, "") || "議事録";
   const vault = app.vault as any;
@@ -244,7 +251,7 @@ export async function saveTranscriptToFile(
     const target = await findSameHourFile(vault, dir, hourPrefix);
     if (target) {
       const prev: string = await vault.adapter.read(target);
-      const next = buildAppendedNote(prev, text, durationSec, now);
+      const next = buildAppendedNote(prev, text, durationSec, now, sttMs);
       await vault.adapter.write(target, next);
       return { path: target, appended: true };
     }
@@ -258,7 +265,7 @@ export async function saveTranscriptToFile(
     counter++;
   }
 
-  const content = renderTranscriptNote(filename, now, text, durationSec, path, mp3Links);
+  const content = renderTranscriptNote(filename, now, text, durationSec, path, mp3Links, sttMs);
   await vault.create(path, content);
   return { path, appended: false };
 }
