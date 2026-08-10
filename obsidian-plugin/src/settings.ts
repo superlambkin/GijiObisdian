@@ -395,23 +395,42 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setDesc("WAV → クラウド STT で文字起こし → 議事録 MD として自動保存します")
       .setHeading();
 
+    const local = isLocalSttProvider(s.sttProvider);
+    const providerList = local ? LOCAL_STT_PROVIDERS : CLOUD_STT_PROVIDERS;
+
     new Setting(content)
-      .setName("STT プロバイダー")
-      .setDesc("切り替えると、接続テスト成功時に保存した provider 別 API キーを自動反映します")
+      .setName("STT カテゴリ")
+      .setDesc("ローカル（無料・オフライン）またはクラウド（BYOK・API キー）")
       .addDropdown((d) =>
-        d.addOption("openai", "OpenAI（デフォルト）")
-          .addOption("google", "Google")
-          .addOption("groq", "Groq")
-          .addOption("qwen3-asr", "Qwen3-ASR（ローカル）")
-          .setValue(s.sttProvider)
+        d
+          .addOption("local", "ローカル")
+          .addOption("cloud", "クラウド")
+          .setValue(local ? "local" : "cloud")
           .onChange(async (v: string) => {
-            Object.assign(s, switchSttProvider(s, v as SttProviderId));
+            const target: SttProviderId = v === "local" ? "qwen3-asr" : "openai";
+            Object.assign(s, switchSttProvider(s, target));
             await this.save();
             await this.display();
           })
       );
 
-    if (s.sttProvider === "qwen3-asr") {
+    new Setting(content)
+      .setName("STT プロバイダー")
+      .setDesc("カテゴリに応じたプロバイダを選択します")
+      .addDropdown((d) => {
+        for (const id of providerList) {
+          d.addOption(id, STT_PROVIDER_LABELS[id]);
+        }
+        return d
+          .setValue(s.sttProvider)
+          .onChange(async (v: string) => {
+            Object.assign(s, switchSttProvider(s, v as SttProviderId));
+            await this.save();
+            await this.display();
+          });
+      });
+
+    if (local) {
       new Setting(content)
         .setName("ASR サーバ URL")
         .setDesc("ローカル qwen3-asr サーバ（既定: http://127.0.0.1:9000/v1）")
@@ -422,15 +441,17 @@ export class GijiSettingsTab extends PluginSettingTab {
           })
         );
 
-      new Setting(content)
-        .setName("ASR モデル名")
-        .setDesc("サーバに送る model 名（既定: qwen3-asr-0.6b）")
-        .addText((t) =>
-          t.setValue(s.sttModel).onChange(async (v: string) => {
-            s.sttModel = v;
-            await this.save();
-          })
-        );
+      if (s.sttProvider === "qwen3-asr") {
+        new Setting(content)
+          .setName("ASR モデル名")
+          .setDesc("Qwen3-ASR の model 名（既定: qwen3-asr-0.6b）。Whisper は固定のため非表示")
+          .addText((t) =>
+            t.setValue(s.sttModel).onChange(async (v: string) => {
+              s.sttModel = v;
+              await this.save();
+            })
+          );
+      }
     } else {
       new Setting(content)
         .setName("STT API キー")
