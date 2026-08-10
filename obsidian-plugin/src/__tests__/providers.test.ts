@@ -371,10 +371,18 @@ test("resolveLlmTimeoutMs: deepseek は 300000 を最低保証する（90000 保
   assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 600000 }, ds), 600000);
 });
 
-test("resolveLlmTimeoutMs: 通常 preset はユーザー設定値を尊重する", () => {
+test("resolveLlmTimeoutMs: 通常 preset はユーザー設定値を尊重する（短くても）", () => {
   const oai = getPreset("openai")!;
   assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 90000 }, oai), 90000);
   assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 150000 }, oai), 150000);
+  // defaultTimeoutMs 未定義の preset では、デフォルトより短いユーザー設定も尊重
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 5000 }, oai), 5000);
+});
+
+test("resolveLlmTimeoutMs: thinking preset（deepseek）は短縮設定でも最低保証を適用", () => {
+  const ds = getPreset("deepseek")!;
+  // ユーザーが短く設定しても、思考モデルは 300000 を最低保証
+  assert.equal(resolveLlmTimeoutMs({ ...DEFAULT_SETTINGS, llmTimeoutMs: 5000 }, ds), 300000);
 });
 
 // api.kimi.com 等 CORS 非対応エンドポイント対策:

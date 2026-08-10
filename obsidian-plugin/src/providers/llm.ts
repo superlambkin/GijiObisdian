@@ -336,14 +336,17 @@ function nonNegativeInt(v: unknown, fallback: number): number {
 
 /**
  * LLM 1 試行あたりのタイムアウトを解決する。
- * thinking モデル（deepseek-v4-flash 等）は思考中に SSE チャンクを送らず、
- * 90000ms タイムアウトと競合して失敗する。そのため preset の defaultTimeoutMs を
- * 最低保証として max() で採用する（ユーザーがさらに長く設定していれば尊重）。
+ * - preset に defaultTimeoutMs が**無い**場合: ユーザー設定をそのまま尊重する
+ *   （90000 より短く設定しても有効）。
+ * - preset に defaultTimeoutMs が**ある**場合: その値を最低保証として max() で採用する。
+ *   thinking モデル（deepseek-v4-flash 等）は思考中に SSE チャンクを送らず、
+ *   90000ms タイムアウトと競合して失敗するため、長めの値を最低保証とする。
+ *   ユーザーがさらに長く設定していれば尊重する。
  */
 export function resolveLlmTimeoutMs(settings: GijiSettings, preset: LlmPresetConfig): number {
   const user = positiveInt(settings.llmTimeoutMs, 90000);
-  const presetDefault = preset.defaultTimeoutMs ?? 90000;
-  return Math.max(user, presetDefault);
+  if (preset.defaultTimeoutMs === undefined) return user;
+  return Math.max(user, preset.defaultTimeoutMs);
 }
 
 /**
