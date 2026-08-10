@@ -18,13 +18,34 @@ export function shouldShowBridgeButton(recordingMethod: string): boolean {
   return recordingMethod === "bridge";
 }
 
+/** 選択中 STT プロバイダの文字起こし用モデル名（録音ボタンのツールチップ表示用） */
+export function sttModelLabel(settings: GijiSettings): string {
+  switch (settings.sttProvider) {
+    case "qwen3-asr":
+      return "Qwen3-ASR-0.6B";
+    case "whisper-small":
+      return "Whisper small（ローカル）";
+    case "openai":
+      return "OpenAI whisper-1";
+    case "groq":
+      return "Groq whisper-large-v3-turbo";
+    case "google":
+      return "Google Speech-to-Text";
+    default:
+      return settings.sttProvider;
+  }
+}
+
 /**
- * ローカル STT 選択時にサーバ未起動なら録音ボタンを赤背景にする。
- * クラウド STT の場合は常に通常表示。
+ * 録音ボタンのホバーツールチップに文字起こし用モデル名を反映する。
+ * ローカル STT 選択時はサーバ未起動なら赤背景にもする（クラウド時は通常表示）。
  */
 export async function refreshSttDownState(settings: GijiSettings): Promise<void> {
   const btn = document.querySelector<HTMLButtonElement>(".giji-record-btn");
   if (!btn) return;
+  const model = `文字起こし: ${sttModelLabel(settings)}`;
+  btn.setAttribute("aria-label", model);
+  btn.setAttribute("title", model);
   if (!isLocalSttProvider(settings.sttProvider)) {
     btn.classList.remove("giji-stt-down");
     return;

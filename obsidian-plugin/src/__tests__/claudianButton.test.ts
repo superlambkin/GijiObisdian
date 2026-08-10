@@ -1,12 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { shouldShowBridgeButton, saveTranscriptAndAutoSummarize } from "../ui/claudianButton";
+import {
+  shouldShowBridgeButton,
+  saveTranscriptAndAutoSummarize,
+  sttModelLabel,
+} from "../ui/claudianButton";
 import { DEFAULT_SETTINGS } from "../settings";
 
 test("shouldShowBridgeButton is true only for bridge", () => {
   assert.equal(shouldShowBridgeButton("bridge"), true);
   assert.equal(shouldShowBridgeButton("direct"), false);
   assert.equal(shouldShowBridgeButton(""), false);
+});
+
+test("sttModelLabel returns model name per provider", () => {
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "qwen3-asr" }), "Qwen3-ASR-0.6B");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "whisper-small" }), "Whisper small（ローカル）");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "openai" }), "OpenAI whisper-1");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "groq" }), "Groq whisper-large-v3-turbo");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "google" }), "Google Speech-to-Text");
 });
 
 // ツールバー 🎙️ ボタン停止フローが要約自動生成を呼ぶこと（回帰テスト）
