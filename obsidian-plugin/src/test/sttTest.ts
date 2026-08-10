@@ -12,7 +12,10 @@ export async function runSttTest(
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<SttTestResult> {
-  if (!settings.sttApiKey) return { ok: false, error: "请先填写 STT API Key" };
+  // qwen3-asr はローカルのため API キー不要
+  if (settings.sttProvider !== "qwen3-asr" && !settings.sttApiKey) {
+    return { ok: false, error: "请先填写 STT API Key" };
+  }
   try {
     const provider = createSttProvider(settings, fetchImpl);
     const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);

@@ -11,6 +11,25 @@ test("empty api key returns hint", async () => {
   assert.match(res.error ?? "", /请先填写 STT API Key/);
 });
 
+test("qwen3-asr skips api key check (local provider)", async () => {
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ text: "你好，这是测试转写功能" }),
+  })) as any;
+  const res = await runSttTest(
+    {
+      ...DEFAULT_SETTINGS,
+      sttProvider: "qwen3-asr",
+      sttApiKey: "",
+      sttBaseUrl: "http://127.0.0.1:9000/v1",
+      sttModel: "qwen3-asr-0.6b",
+    },
+    fetchImpl
+  );
+  assert.equal(res.ok, true);
+  assert.equal(res.text, "你好，这是测试转写功能");
+});
+
 test("transcribe success returns text", async () => {
   const fetchImpl = (async () => ({
     ok: true,
