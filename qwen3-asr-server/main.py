@@ -34,7 +34,7 @@ def _pick_engine(model: str | None):
 
 
 @app.post("/v1/audio/transcriptions")
-async def transcriptions(
+def transcriptions(
     file: UploadFile = File(...),
     model: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
@@ -42,7 +42,7 @@ async def transcriptions(
     suffix = Path(file.filename or "audio.wav").suffix or ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
         tmp = f.name
-        f.write(await file.read())
+        f.write(file.file.read())
     try:
         result = _pick_engine(model).transcribe(tmp, language=language)
         return {"text": result.get("text", "").strip()}
