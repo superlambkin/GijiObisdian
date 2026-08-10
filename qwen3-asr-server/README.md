@@ -60,8 +60,7 @@ CPU 版 torch + openai-whisper の導入容量は約 **2 GB** です（初回は
 
 ```bash
 source .venv/Scripts/activate
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install openai-whisper
+pip install -r requirements-whisper.txt
 ```
 
 > 💡 whisper のモデルは **初回 transcribe 時に自動ダウンロード**（約 460 MB）され、以後キャッシュされます。
@@ -152,7 +151,8 @@ curl -s -X POST http://127.0.0.1:9000/v1/audio/transcriptions \
 | `qwen3-asr-0.6b` | Qwen3-ASR（ONNX-CPU） | 既定・議事録向け |
 | `whisper-small` | openai-whisper small（CPU torch） | 速度優先・下書き向け |
 
-Whisper を使うには追加で `openai-whisper` と CPU 版 torch（~2GB）の導入が必要。
+Whisper を使うには追加で `pip install -r requirements-whisper.txt` による
+`openai-whisper` と CPU 版 torch（~2GB）の導入が必要（任意）。
 初回転写時は whisper-small モデル（~460MB）を自動ダウンロードする。
 
 ---
