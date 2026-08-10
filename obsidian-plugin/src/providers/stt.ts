@@ -39,6 +39,51 @@ class GroqStt implements SttProvider {
   }
 }
 
+/** Qwen3-ASR ローカルサーバ（OpenAI 互換 /v1/audio/transcriptions）。API キー不要。 */
+class Qwen3AsrStt implements SttProvider {
+  id = "qwen3-asr";
+  constructor(
+    private baseUrl: string,
+    private model: string,
+    private fetchImpl: typeof fetch
+  ) {}
+
+  /** auto → 省略 / zh → Chinese / ja → Japanese / en → English */
+  private langName(lang: SttLang): string | undefined {
+    switch (lang) {
+      case "zh":
+        return "Chinese";
+      case "ja":
+        return "Japanese";
+      case "en":
+        return "English";
+      default:
+        return undefined; // 自動検出
+    }
+  }
+
+  async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
+    const wav = isWav(audio);
+    const form = new FormData();
+    form.append("model", this.model);
+    form.append(
+      "file",
+      new Blob([audio], { type: wav ? "audio/wav" : "audio/mpeg" }),
+      wav ? "audio.wav" : "audio.mp3"
+    );
+    const l = this.langName(lang);
+    if (l) form.append("language", l);
+
+    const res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
+      method: "POST",
+      body: form as any,
+    });
+    if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    return data.text ?? "";
+  }
+}
+
 class OpenaiStt implements SttProvider {
   id = "openai";
   constructor(private apiKey: string, private fetchImpl: typeof fetch) {}
@@ -169,6 +214,8 @@ export function createSttProvider(
       return new OpenaiStt(settings.sttApiKey, fetchImpl);
     case "google":
       return new GoogleStt(settings.sttApiKey, fetchImpl);
+    case "qwen3-asr":
+      return new Qwen3AsrStt(settings.sttBaseUrl, settings.sttModel, fetchImpl);
     default:
       // 黙ったフォールバックは誤設定を隠す（例: OpenAI キーを Groq へ送信して 401）
       throw new Error(`unsupported STT provider: ${settings.sttProvider}（未対応の STT プロバイダーです）`);
