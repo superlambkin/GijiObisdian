@@ -91,3 +91,9 @@ test("buildSegmentResult carries audioPaths and startTime", () => {
   assert.deepEqual(res.audioPaths, ["C:/a.mp3", "C:/b.mp3"]);
   assert.equal(res.startTime?.getTime(), start.getTime());
 });
+
+test("buildSegmentResult carries sttMs (処理時間表示用)", () => {
+  const input = { audioPaths: [], durationSec: 5 };
+  const res = buildSegmentResult("テキスト", input, undefined, 12345);
+  assert.equal(res.sttMs, 12345);
+});

@@ -49,7 +49,10 @@ export async function stopSegment(app: App, settings: GijiSettings, manifestDir:
   const time = `${startTime.getHours().toString().padStart(2, "0")}:${startTime.getMinutes().toString().padStart(2, "0")}`;
   const cur = editor.getValue();
   editor.setValue(appendSegmentNote(cur, `${time}`, result.text));
-  new Notice("✅ ノートに転写を追記しました");
+  const sttSec = typeof result.sttMs === "number" ? (result.sttMs / 1000).toFixed(1) : null;
+  new Notice(
+    sttSec ? `✅ ノートに転写を追記しました（処理時間: ${sttSec} 秒）` : "✅ ノートに転写を追記しました"
+  );
 
   // 議事録の自動生成（要約中表示 → 完了で非表示）
   timer?.setSummarizing();

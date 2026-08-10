@@ -1,7 +1,8 @@
 import { Notice, Plugin } from "obsidian";
-import { GijiSettings } from "../settings";
+import { GijiSettings, isLocalSttProvider } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
+import { isLocalAsrUp } from "../qwen3AsrLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { appendToClaudianInput } from "./claudianApi";
@@ -15,6 +16,21 @@ const INPUT_CONTAINER_SELECTOR = ".claudian-input-container";
 
 export function shouldShowBridgeButton(recordingMethod: string): boolean {
   return recordingMethod === "bridge";
+}
+
+/**
+ * ローカル STT 選択時にサーバ未起動なら録音ボタンを赤背景にする。
+ * クラウド STT の場合は常に通常表示。
+ */
+export async function refreshSttDownState(settings: GijiSettings): Promise<void> {
+  const btn = document.querySelector<HTMLButtonElement>(".giji-record-btn");
+  if (!btn) return;
+  if (!isLocalSttProvider(settings.sttProvider)) {
+    btn.classList.remove("giji-stt-down");
+    return;
+  }
+  const up = await isLocalAsrUp(settings);
+  btn.classList.toggle("giji-stt-down", !up);
 }
 
 interface ButtonState {
@@ -155,6 +171,7 @@ function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonEle
 export interface SaveAndSummarizeOptions {
   startTime?: Date;
   audioPaths?: string[];
+  sttMs?: number;
   autoSummarizeImpl?: typeof runAutoSummarize;
 }
 
@@ -166,6 +183,8 @@ export async function saveTranscriptAndAutoSummarize(
   opts: SaveAndSummarizeOptions = {},
 ): Promise<void> {
   const mp3Links = buildMp3Links(opts.audioPaths ?? []);
+  const sttSec = typeof opts.sttMs === "number" ? (opts.sttMs / 1000).toFixed(1) : null;
+  const timeSuffix = sttSec ? `（处理时间: ${sttSec} 秒）` : "";
   if (settings.autoSaveTranscript) {
     try {
       const saved = await saveTranscriptToFile(
@@ -176,7 +195,11 @@ export async function saveTranscriptAndAutoSummarize(
         opts.startTime ?? new Date(),
         mp3Links
       );
-      new Notice(saved.appended ? `📄 已追记到议事录: ${saved.path}` : `📄 转写已保存: ${saved.path}`);
+      new Notice(
+        saved.appended
+          ? `📄 已追记到议事录: ${saved.path}${timeSuffix}`
+          : `📄 转写已保存: ${saved.path}${timeSuffix}`
+      );
     } catch (err: any) {
       new Notice(`保存转写失败: ${err?.message ?? err}`);
     }
@@ -202,6 +225,9 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
 
   let busy = false;
 
+  // ローカル STT サーバ未起動時は赤背景（転写不可の警告）。定期ポーリングでも更新される
+  void refreshSttDownState(settings);
+
   btn.addEventListener("click", async () => {
     if (busy) return;
     busy = true;
@@ -213,6 +239,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         let durationSec: number | undefined;
         let startTime: Date | undefined;
         let audioPaths: string[] = [];
+        let sttMs: number | undefined;
         try {
           const result = await state.recorder.stop(settings);
           if (result) {
@@ -220,6 +247,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
             durationSec = result.durationSec;
             startTime = result.startTime;
             audioPaths = result.audioPaths ?? [];
+            sttMs = result.sttMs;
           }
         } catch {
           // Recorder already surfaces Notice; reset UI below.
@@ -239,6 +267,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
           await saveTranscriptAndAutoSummarize(plugin, settings, text, durationSec, {
             startTime,
             audioPaths,
+            sttMs,
           });
         } finally {
           timer?.stop(); // 全処理完了で非表示
@@ -313,6 +342,7 @@ export function setupClaudianButton(
   timer?: RecordingTimer,
 ): { cleanup: () => void; refresh: () => void } {
   let interval: ReturnType<typeof setInterval> | null = null;
+  let sttInterval: ReturnType<typeof setInterval> | null = null;
 
   function scan() {
     const toolbars = document.querySelectorAll(TOOLBAR_SELECTOR);
@@ -339,6 +369,15 @@ export function setupClaudianButton(
   function refresh() {
     scan();
     syncPolling();
+    // ローカル STT サーバ未起動警告の定期更新（15 秒間隔）
+    if (!sttInterval) {
+      void refreshSttDownState(settings).catch(() => {});
+      sttInterval = setInterval(() => {
+        void refreshSttDownState(settings).catch((err) =>
+          console.warn("[giji] stt server status refresh failed", err)
+        );
+      }, 15000);
+    }
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -368,6 +407,10 @@ export function setupClaudianButton(
       if (interval) {
         clearInterval(interval);
         interval = null;
+      }
+      if (sttInterval) {
+        clearInterval(sttInterval);
+        sttInterval = null;
       }
       observer.disconnect();
       document.querySelectorAll(`[${BTN_MARK}]`).forEach((btn) => btn.remove());

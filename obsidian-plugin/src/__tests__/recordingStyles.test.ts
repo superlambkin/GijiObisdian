@@ -8,3 +8,8 @@ test("RECORDING_STYLES_CSS は .giji-recording を赤色点滅させる", () => 
   assert.match(RECORDING_STYLES_CSS, /@keyframes giji-blink/);
   assert.match(RECORDING_STYLES_CSS, /animation:/);
 });
+
+test("RECORDING_STYLES_CSS は .giji-stt-down（サーバ未起動警告・赤背景）を持つ", () => {
+  assert.match(RECORDING_STYLES_CSS, /\.giji-record-btn\.giji-stt-down/);
+  assert.match(RECORDING_STYLES_CSS, /background:\s*#e33/);
+});

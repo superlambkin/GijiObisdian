@@ -14,6 +14,8 @@ export interface SegmentResult {
   durationSec: number;
   startTime?: Date;
   audioPaths?: string[];
+  /** STT 転写処理時間（ms）。終了メッセージの（処理時間）表示に使う */
+  sttMs?: number;
 }
 
 /** bridge / direct 共通の転写対象（BridgeStopResult と DirectRecordResult の共通部分） */
@@ -24,13 +26,20 @@ interface TranscribeInput {
   warning?: string;
 }
 
-/** 転写結果を SegmentResult にまとめる（audioPaths と startTime を引き継ぐ） */
+/** 転写結果を SegmentResult にまとめる（audioPaths / startTime / sttMs を引き継ぐ） */
 export function buildSegmentResult(
   text: string,
   input: TranscribeInput,
-  startTime?: Date
+  startTime?: Date,
+  sttMs?: number
 ): SegmentResult {
-  return { text, durationSec: input.durationSec, startTime, audioPaths: input.audioPaths };
+  return {
+    text,
+    durationSec: input.durationSec,
+    startTime,
+    audioPaths: input.audioPaths,
+    sttMs,
+  };
 }
 
 /**
@@ -121,7 +130,7 @@ export class SegmentRecorder {
         this.manifestDir,
         `[${new Date().toISOString()}] stage=stt dur_ms=${dur} status=ok provider=${settings.sttProvider} chunks=${sttChunks} audio_ms=${audioMs}`
       );
-      return buildSegmentResult(parts.join("\n\n"), result, this.startTime);
+      return buildSegmentResult(parts.join("\n\n"), result, this.startTime, dur);
     } catch (e: any) {
       const dur = Date.now() - sttStartMs;
       await writeDebugLog(
