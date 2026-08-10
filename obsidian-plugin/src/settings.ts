@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdirSync } from "fs";
 
 export type SttLang = "auto" | "zh" | "ja" | "en";
-export type SttProviderId = "openai" | "google" | "groq";
+export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr";
 import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
 export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
@@ -32,6 +32,10 @@ export interface GijiSettings {
   // ② 文字起こし
   sttProvider: SttProviderId;
   sttApiKey: string;
+  /** 🔜 qwen3-asr ローカルサーバ URL（既定 http://127.0.0.1:9000/v1） */
+  sttBaseUrl: string;
+  /** 🔜 qwen3-asr モデル名（既定 qwen3-asr-0.6b） */
+  sttModel: string;
   sttLang: SttLang;
   /** STT provider 別に保存した API キープロファイル */
   sttProviderProfiles?: Record<string, SttProviderProfile>;
@@ -92,6 +96,8 @@ export function isBridgeSettingDisabled(recordingMethod: string): boolean {
 export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "openai",
   sttApiKey: "",
+  sttBaseUrl: "http://127.0.0.1:9000/v1",
+  sttModel: "qwen3-asr-0.6b",
   sttLang: "auto",
   sttProviderProfiles: {},
   llmProvider: "claudian",

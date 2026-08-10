@@ -23,6 +23,11 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.ok(DEFAULT_SETTINGS.transcriptFileNameTemplate.startsWith("録音_"));
 });
 
+test("DEFAULT_SETTINGS includes qwen3-asr fields", () => {
+  assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
+  assert.equal(DEFAULT_SETTINGS.sttModel, "qwen3-asr-0.6b");
+});
+
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
   assert.ok(DEFAULT_SETTINGS.recordingSaveDir.includes("GijiObsidian"));
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{year}}"));
