@@ -29,6 +29,7 @@ export function saveProviderProfile(settings: GijiSettings, providerId: string):
     llmTimeoutMs: settings.llmTimeoutMs,
     llmMaxRetries: settings.llmMaxRetries,
     llmApiFormatOverride: settings.llmApiFormatOverride,
+    llmThinkingEnabled: settings.llmThinkingEnabled,
   };
   return {
     ...settings,
@@ -54,6 +55,7 @@ export function loadProviderProfile(settings: GijiSettings, providerId: string):
     ...(profile.llmTimeoutMs !== undefined ? { llmTimeoutMs: profile.llmTimeoutMs } : {}),
     ...(profile.llmMaxRetries !== undefined ? { llmMaxRetries: profile.llmMaxRetries } : {}),
     ...(profile.llmApiFormatOverride !== undefined ? { llmApiFormatOverride: profile.llmApiFormatOverride } : {}),
+    ...(profile.llmThinkingEnabled !== undefined ? { llmThinkingEnabled: profile.llmThinkingEnabled } : {}),
   };
 }
 

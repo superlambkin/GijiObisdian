@@ -238,6 +238,59 @@ test("deepseek preset uses anthropic endpoint with default max_tokens", async ()
   assert.equal(capturedBody.max_tokens, 32000);
 });
 
+// ユーザー要件: DeepSeek 要約で Thinking あり/なしを比較
+// Anthropic 互換は thinking:{type:"disabled"} で思考を無効化できる（curl で実証）
+test("deepseek: thinking disabled なら body.thinking = {type:disabled}", async () => {
+  let capturedBody: any = null;
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: makeSseBody(['data: {"type":"message_stop"}\n\n']),
+      json: async () => ({}),
+    } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "deepseek",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+      llmThinkingEnabled: false,
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.deepEqual(capturedBody.thinking, { type: "disabled" });
+});
+
+test("deepseek: thinking enabled（デフォルト）なら body.thinking を含まない", async () => {
+  let capturedBody: any = null;
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return {
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: makeSseBody(['data: {"type":"message_stop"}\n\n']),
+      json: async () => ({}),
+    } as any;
+  }) as any;
+  const llm = createLlmProvider(
+    {
+      ...DEFAULT_SETTINGS,
+      llmProvider: "deepseek",
+      llmApiKey: "k",
+      llmBaseUrl: "",
+      llmModel: "",
+    },
+    fakeFetch
+  );
+  await llm.complete("s", "u");
+  assert.equal(capturedBody.thinking, undefined);
+});
+
 test("MiniMax preset enforces defaultMaxTokens=524288", async () => {
   let capturedBody: any = null;
   const fakeFetch = (async (_url: string, init: any) => {

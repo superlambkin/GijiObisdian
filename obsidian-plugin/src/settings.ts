@@ -22,6 +22,7 @@ export interface LlmProviderProfile {
   llmTimeoutMs?: number;
   llmMaxRetries?: number;
   llmApiFormatOverride?: boolean;
+  llmThinkingEnabled?: boolean;
 }
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
@@ -50,6 +51,8 @@ export interface GijiSettings {
   llmAdvancedOpen: boolean;
   /** API 形式を preset ではなく手動で上書きする */
   llmApiFormatOverride: boolean;
+  /** Anthropic 互換で thinking（推論）を有効にするか（DeepSeek 等の thinking モデル用） */
+  llmThinkingEnabled: boolean;
   /** provider 別に保存した LLM 設定プロファイル（API キー・モデル名・URL などを共有しない） */
   llmProviderProfiles?: Record<string, LlmProviderProfile>;
   /** 性能調査用デバッグログ（logs/giji-YYYY-MM-DD.log）を出力する */
@@ -102,6 +105,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   llmMaxRetries: 2,
   llmAdvancedOpen: false,
   llmApiFormatOverride: false,
+  llmThinkingEnabled: true,
   llmProviderProfiles: {},
   debugLog: true,
   autoSummarizeEnabled: true,
@@ -538,6 +542,16 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     if (s.llmAdvancedOpen) {
+      new Setting(content)
+        .setName("🧠 Thinking（推論）")
+        .setDesc("ON: 思考してから回答（時間がかかる・高品質）。OFF: 直接回答（高速）。DeepSeek 等の thinking モデルで比較できます")
+        .addToggle((t) =>
+          t.setValue(s.llmThinkingEnabled !== false).onChange(async (v: boolean) => {
+            s.llmThinkingEnabled = v;
+            await this.save();
+          })
+        );
+
       new Setting(content)
         .setName("LLM baseUrl")
         .setDesc("API のエンドポイント URL（プリセット既定を上書き）")

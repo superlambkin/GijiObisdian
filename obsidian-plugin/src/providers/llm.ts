@@ -270,17 +270,24 @@ class AnthropicLlm implements LlmProvider {
     private apiVersion: string,
     private maxTokens: number,
     private fetchImpl: typeof fetch,
-    private callOpts: CallOptions
+    private callOpts: CallOptions,
+    private thinkingEnabled: boolean = true
   ) {}
 
   async complete(system: string, user: string, stats?: LlmCallStats, progress?: LlmProgress): Promise<string> {
-    const body = {
+    const body: any = {
       model: this.model,
       max_tokens: this.maxTokens,
       system,
       messages: [{ role: "user", content: user }],
       stream: true,
     };
+    // DeepSeek 等の thinking モデル: thinking を無効化するには
+    // Anthropic 互換の thinking:{type:"disabled"} を送る（curl で実証済み）。
+    // 有効時はパラメータなし（モデル既定 = 思考あり）を維持する。
+    if (!this.thinkingEnabled) {
+      body.thinking = { type: "disabled" };
+    }
     try {
       const { value, retries } = await withRetry(
         () =>
@@ -413,7 +420,8 @@ export function createLlmProvider(
       settings.anthropicVersion || preset.anthropicVersion || "2023-06-01",
       effectiveMaxTokens,
       fetchImpl,
-      callOpts
+      callOpts,
+      settings.llmThinkingEnabled !== false
     );
   }
   // Ollama は stream_options 非対応のため includeUsage=false（既存挙動維持）
