@@ -22,15 +22,15 @@ export function shouldShowBridgeButton(recordingMethod: string): boolean {
 export function sttModelLabel(settings: GijiSettings): string {
   switch (settings.sttProvider) {
     case "qwen3-asr":
-      return "Qwen3-ASR-0.6B";
+      return "Qwen3";
     case "whisper-small":
-      return "Whisper small（ローカル）";
+      return "WhisperS";
     case "openai":
-      return "OpenAI whisper-1";
+      return "OpenAI";
     case "groq":
-      return "Groq whisper-large-v3-turbo";
+      return "Groq";
     case "google":
-      return "Google Speech-to-Text";
+      return "Google";
     default:
       return settings.sttProvider;
   }
