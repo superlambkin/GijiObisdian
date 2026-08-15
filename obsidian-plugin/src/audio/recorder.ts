@@ -56,8 +56,9 @@ export class SegmentRecorder {
   private direct: DirectRecorder;
   private startTime?: Date;
 
-  constructor(private app: App, private manifestDir: string = "", direct: DirectRecorder = new DirectRecorder()) {
-    this.direct = direct;
+  constructor(private app: App, private manifestDir: string = "", direct?: DirectRecorder) {
+    // v0.5: DirectRecorder に app/manifestDir を渡し、writeDebugLog でデバイス選択診断を出せるようにする
+    this.direct = direct ?? new DirectRecorder({}, app, manifestDir);
   }
 
   isRecording(): boolean {
@@ -68,6 +69,11 @@ export class SegmentRecorder {
     this.startTime = new Date();
     // PC ダイレクト録音：ブリッジ確認なし・プラグイン単独で開始
     if (settings.recordingMethod === "direct") {
+      await writeDebugLog(
+        this.app,
+        this.manifestDir,
+        `[${new Date().toISOString()}] stage=device_select mode=direct mic_id=${(settings.directMicDeviceId || "").trim() || "(default)"} speaker_id=${(settings.directSpeakerDeviceId || "").trim() || "(default)"}`
+      ).catch(() => {});
       return this.direct.start(settings);
     }
     try {
@@ -76,11 +82,22 @@ export class SegmentRecorder {
         new Notice("⚠️ 録音ブリッジが起動していません。先に recorder-bridge を実行してください");
         return false;
       }
+      await writeDebugLog(
+        this.app,
+        this.manifestDir,
+        `[${new Date().toISOString()}] stage=device_select mode=bridge mic_id=${(settings.bridgeMicDeviceId || "").trim() || "(default)"} speaker_id=${(settings.bridgeSpeakerDeviceId || "").trim() || "(default)"}`
+      ).catch(() => {});
       const outDir = (settings.recordingSaveDir || "").trim() || undefined;
       const fileName = (settings.recordingFileNameTemplate || "").trim()
         ? buildRecordingFileName(new Date(), settings.recordingFileNameTemplate)
         : undefined;
-      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, { outDir, fileName, audioSource: settings.audioSource });
+      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, {
+        outDir,
+        fileName,
+        audioSource: settings.audioSource,
+        micDeviceId: (settings.bridgeMicDeviceId || "").trim() || undefined,
+        speakerDeviceId: (settings.bridgeSpeakerDeviceId || "").trim() || undefined,
+      });
       return true;
     } catch (err: any) {
       this.sessionId = null;

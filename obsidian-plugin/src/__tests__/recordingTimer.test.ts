@@ -114,12 +114,12 @@ test("setSummarizing shows 要約生成中 with elapsed time and ticks", () => {
   timer.start();
   timer.setSummarizing();
   assert.equal(timer.isRunning(), true);
-  assert.equal(el.getText(), "📡 接続中… 00:00");
+  assert.equal(el.getText(), "📡 要約中… 00:00");
   assert.equal(el.isVisible(), true);
   assert.equal(fake.handlerCount(), 1);
   fake.setNow(95_000);
   fake.fire();
-  assert.equal(el.getText(), "📡 接続中… 01:35");
+  assert.equal(el.getText(), "📡 要約中… 01:35");
 });
 
 test("llmModelLabel: プリセットの短縮名を返す", () => {
@@ -138,7 +138,7 @@ test("setSummarizing(model) はステータスバーにモデル名を表示す�
   const fake = makeFakeDeps();
   const timer = new RecordingTimer(el, fake.deps);
   timer.setSummarizing("deepseek-v4-flash");
-  assert.equal(el.getText(), "📡 接続中…（deepseek-v4-flash） 00:00");
+  assert.equal(el.getText(), "📡 要約中…（deepseek-v4-flash） 00:00");
   timer.updateSummarizeStage("generating", 123);
   assert.equal(el.getText(), "✍️ 生成中…（deepseek-v4-flash） 123字 00:00");
 });
@@ -151,10 +151,10 @@ test("summarizing の経過時間は setSummarizing 時点から計測される"
   fake.setNow(60_000); // 録音 60 秒経過
   fake.fire();
   timer.setSummarizing(); // 要約開始で 00:00 にリセット
-  assert.equal(el.getText(), "📡 接続中… 00:00");
+  assert.equal(el.getText(), "📡 要約中… 00:00");
   fake.setNow(65_000);
   fake.fire();
-  assert.equal(el.getText(), "📡 接続中… 00:05");
+  assert.equal(el.getText(), "📡 要約中… 00:05");
 });
 
 test("要約生成中に start すると録音表示へ切り替わる", () => {
@@ -164,7 +164,7 @@ test("要約生成中に start すると録音表示へ切り替わる", () => {
   timer.setSummarizing();
   fake.setNow(30_000);
   fake.fire();
-  assert.equal(el.getText(), "📡 接続中… 00:30");
+  assert.equal(el.getText(), "📡 要約中… 00:30");
   timer.start(); // 要約完了を待たずに新規録音開始
   assert.equal(el.getText(), "🎙️ 00:00");
   fake.setNow(33_000);
@@ -178,7 +178,7 @@ test("updateSummarizeStage: generating で受信文字数付き表示", () => {
   const fake = makeFakeDeps();
   const timer = new RecordingTimer(el, fake.deps);
   timer.setSummarizing();
-  assert.equal(el.getText(), "📡 接続中… 00:00");
+  assert.equal(el.getText(), "📡 要約中… 00:00");
   timer.updateSummarizeStage("generating", 12345);
   assert.equal(el.getText(), "✍️ 生成中… 12,345字 00:00");
   fake.setNow(65_000);

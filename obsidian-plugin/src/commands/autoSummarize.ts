@@ -36,7 +36,7 @@ export interface AutoSummarizeOptions {
   force?: boolean;
   /** 指定時は連番を作らずこのパスへ保存する（既存なら上書き） */
   overwritePath?: string;
-  /** 進捗コールバック（接続中 → 生成中 → 保存中） */
+  /** 進捗コールバック（要約中 → 生成中 → 保存中） */
   onProgress?: (p: SummarizeProgress) => void;
 }
 

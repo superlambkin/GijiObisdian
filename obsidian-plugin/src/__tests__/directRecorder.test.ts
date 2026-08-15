@@ -39,6 +39,7 @@ const settings = {
 function makeDeps(overrides: Partial<DirectRecorderDeps> = {}): Required<DirectRecorderDeps> {
   return {
     getUserMedia: async () => ({}) as MediaStream,
+    enumerateDevices: async () => [],
     MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
     writeFile: async () => {},
     deleteFile: async () => {},
@@ -128,4 +129,32 @@ test("stop: 録音していない → null", async () => {
   const r = new DirectRecorder(makeDeps());
   const result = await r.stop(settings);
   assert.equal(result, null);
+});
+
+test("start: directMicDeviceId 設定時に deviceId.exact を getUserMedia に渡す", async () => {
+  FakeMediaRecorder.instances = [];
+  let captured: MediaStreamConstraints | undefined;
+  const deps = makeDeps({
+    getUserMedia: async (c) => {
+      captured = c;
+      return {} as MediaStream;
+    },
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, directMicDeviceId: "bt-jm19" } as any);
+  assert.equal(ok, true);
+  assert.deepEqual(captured, { audio: { deviceId: { exact: "bt-jm19" } } });
+});
+
+test("start: directMicDeviceId 空文字なら audio: true にフォールバック", async () => {
+  let captured: MediaStreamConstraints | undefined;
+  const deps = makeDeps({
+    getUserMedia: async (c) => {
+      captured = c;
+      return {} as MediaStream;
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, directMicDeviceId: "" } as any);
+  assert.deepEqual(captured, { audio: true });
 });

@@ -37,7 +37,7 @@ type TimerMode = "recording" | "summarizing" | null;
 export type SummarizeStage = "connecting" | "generating" | "saving";
 
 const SUMMARIZE_LABELS: Record<SummarizeStage, string> = {
-  connecting: "📡 接続中…",
+  connecting: "📡 要約中…",
   generating: "✍️ 生成中…",
   saving: "💾 保存中…",
 };
