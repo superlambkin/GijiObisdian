@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import { GijiSettings } from "../settings";
 import { transcribeAudio } from "./importAudio";
 import { saveTranscriptToFile } from "../notes/saver";
@@ -76,4 +76,29 @@ export async function transcribeAndSaveAudioFile(
   );
 
   return { path: saved.path, charCount: text.trim().length };
+}
+
+/**
+ * ファイル選択ダイアログを開く DOM ラッパー（settings.ts から呼ぶ）。
+ * 選択後は transcribeAndSaveAudioFile で転写→MD保存し、作成 MD をエディタで開く。
+ */
+export function openRecordingFilePicker(app: App, settings: GijiSettings): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "audio/*,.wav,.mp3,.m4a,.flac,.ogg";
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const { path } = await transcribeAndSaveAudioFile(app, settings, file as AudioFileLike);
+      new Notice(`✅ 転写を保存しました: ${path}`);
+      const tfile = app.vault.getAbstractFileByPath(path);
+      if (tfile instanceof TFile) {
+        await app.workspace.getLeaf(false).openFile(tfile);
+      }
+    } catch (err: any) {
+      new Notice(`❌ 転写に失敗しました: ${err?.message ?? err}`);
+    }
+  };
+  input.click();
 }

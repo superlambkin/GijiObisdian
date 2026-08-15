@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS } from "../settings";
-import { transcribeAndSaveAudioFile, AudioFileLike } from "../commands/transcribeFile";
+import {
+  transcribeAndSaveAudioFile,
+  openRecordingFilePicker,
+  AudioFileLike,
+} from "../commands/transcribeFile";
 
 function makeVault() {
   const files = new Map<string, boolean>();
@@ -116,4 +120,29 @@ test("transcribeAndSaveAudioFile propagates STT errors", async () => {
       }),
     /STT API error/
   );
+});
+
+test("openRecordingFilePicker creates an audio file input and clicks it", () => {
+  let clicked = false;
+  let input: any = null;
+  (globalThis as any).document = {
+    createElement(tag: string) {
+      assert.equal(tag, "input");
+      input = { type: "", accept: "", click() { clicked = true; } };
+      return input;
+    },
+  };
+  try {
+    const app = {
+      vault: { getAbstractFileByPath: () => null },
+      workspace: { getLeaf: () => ({ openFile: async () => {} }) },
+    } as any;
+    openRecordingFilePicker(app, DEFAULT_SETTINGS);
+    assert.equal(input.type, "file");
+    assert.ok(input.accept.includes(".mp3"));
+    assert.ok(input.accept.includes("audio/*"));
+    assert.equal(clicked, true);
+  } finally {
+    delete (globalThis as any).document;
+  }
 });
