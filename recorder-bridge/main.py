@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import config
+import soundcard as sc
 from recorder import Recorder, RecorderStateError
 
 app = FastAPI(title="GijiObsidian Recorder Bridge")
@@ -27,6 +28,9 @@ class StartReq(BaseModel):
     fileName: Optional[str] = None
     # 録音モード: mic（マイクのみ）/ pcLoopback（PC 音声のみ）/ mix（マイク+PC 音声）
     audioSource: Optional[str] = "mic"
+    # v0.5: デバイス選択（soundcard の id フィールド）。空文字/None → システム既定
+    micDeviceId: Optional[str] = None
+    speakerDeviceId: Optional[str] = None
 
 
 class StopReq(BaseModel):
@@ -38,6 +42,31 @@ def health():
     return {"status": "ok", "version": config.VERSION}
 
 
+@app.get("/audio/devices")
+def list_devices():
+    """soundcard で見える全マイク・スピーカーを返す。UI のドロップダウン充填用。
+
+    - Bluetooth HFP マイクも列挙されるが、soundcard 経由での開放は
+      端末側の WASAPI 制約で失敗することがある（v0.5 修正対象）。
+    - いずれかの列挙に失敗しても全体を 500 にせず、その側だけ空配列にする。
+    """
+    try:
+        mics = [
+            {"id": m.id, "name": m.name}
+            for m in sc.all_microphones()
+        ]
+    except Exception:
+        mics = []
+    try:
+        spk = [
+            {"id": s.id, "name": s.name}
+            for s in sc.all_speakers()
+        ]
+    except Exception:
+        spk = []
+    return {"microphones": mics, "speakers": spk}
+
+
 @app.post("/record/start")
 def record_start(req: StartReq):
     try:
@@ -45,13 +74,21 @@ def record_start(req: StartReq):
             out_dir=req.outDir,
             file_name=req.fileName,
             audio_source=req.audioSource or "mic",
+            mic_device=(req.micDeviceId or None) or None,
+            speaker_device=(req.speakerDeviceId or None) or None,
         )
     except RecorderStateError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         # WASAPI ループバック非対応・デバイス無し・不正な audioSource 等
         raise HTTPException(status_code=500, detail=f"audio_source_failed: {e}")
-    return {"recording": True, "sessionId": sid, "audioSource": req.audioSource or "mic"}
+    return {
+        "recording": True,
+        "sessionId": sid,
+        "audioSource": req.audioSource or "mic",
+        "micDeviceId": req.micDeviceId,
+        "speakerDeviceId": req.speakerDeviceId,
+    }
 
 
 @app.post("/record/stop")

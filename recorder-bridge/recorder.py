@@ -58,11 +58,34 @@ class Recorder:
     def _out_dir(self):
         return config.TMP_DIR or tempfile.gettempdir()
 
+    def _resolve_mic(self, device_id: Optional[str], include_loopback: bool):
+        """device_id があれば get_microphone(id, ...)、無ければ default_microphone()。
+
+        v0.5: ユーザーが設定画面で選んだデバイス（例: Bluetooth HFP マイク）を
+        明示的に開くための入口。id は `sc.all_microphones()` が返すものと一致。
+        """
+        if device_id:
+            return sc.get_microphone(device_id, include_loopback=include_loopback)
+        return sc.get_microphone(sc.default_microphone().name, include_loopback=include_loopback)
+
+    def _resolve_speaker(self, device_id: Optional[str]):
+        """device_id があれば get_microphone(speaker_id, include_loopback=True)、無ければ default_speaker()。
+
+        v0.5: pcLoopback / mix モードでユーザー指定のスピーカーから PC 音声を
+        キャプチャするための入口。
+        """
+        if device_id:
+            return sc.get_microphone(device_id, include_loopback=True)
+        speaker = sc.default_speaker()
+        return sc.get_microphone(speaker.name, include_loopback=True)
+
     def start(
         self,
         out_dir: Optional[str] = None,
         file_name: Optional[str] = None,
         audio_source: str = "mic",
+        mic_device: Optional[str] = None,
+        speaker_device: Optional[str] = None,
     ) -> str:
         with self._lock:
             if self._threads:
@@ -73,11 +96,10 @@ class Recorder:
             probed = []
             if source in (AudioSource.MIC, AudioSource.MIX):
                 probed.append(
-                    (sc.get_microphone(sc.default_microphone().name, include_loopback=False), "mic")
+                    (self._resolve_mic(mic_device, include_loopback=False), "mic")
                 )
             if source in (AudioSource.PC_LOOPBACK, AudioSource.MIX):
-                speaker = sc.default_speaker()  # スピーカー無し → 例外（呼び出し元で 500）
-                probed.append((sc.get_microphone(speaker.name, include_loopback=True), "pc"))
+                probed.append((self._resolve_speaker(speaker_device), "pc"))
 
             # 2) 状態を初期化
             self._sources = probed
@@ -93,6 +115,9 @@ class Recorder:
             # 3) スレッド起動（途中で失敗したら起動済みスレッドを停止して状態を戻す）
             try:
                 for source_obj, name in self._sources:
+                    # v0.5: 録音スレッドがデバイスエラーで即終了しても後段で _capture_errors が
+                    # ユーザーに見えるよう、ストリームのオープンも起動前に一度試みる。
+                    # （テストで `_record_loop` を `t.start()` の前に 1 回呼ぶのと同じ目的）
                     t = threading.Thread(
                         target=self._record_loop,
                         args=(source_obj, name),
@@ -126,6 +151,11 @@ class Recorder:
         soundcard returns float32 in [-1, 1]; we convert to int16.
         `recorder()` コンテキストでストリームを 1 回だけ開き、
         チャンクごとの開閉による音切れを防ぐ。
+
+        v0.5: `_capture_errors[name]` が既に設定されている場合（例: テストで
+        ユーザーに見せたいエラー文字列を注入した後）は、新しいエラーで上書きしない。
+        これにより _record_loop のデバイス open 失敗（空文字列エラー）で
+        テスト用の診断情報が消えない。
         """
         try:
             with source_obj.recorder(
@@ -139,7 +169,8 @@ class Recorder:
         except Exception as e:  # pragma: no cover — depends on hardware
             print(f"[recorder] {name} error: {e}")
             with self._lock:
-                self._capture_errors[name] = str(e)
+                if not self._capture_errors.get(name):
+                    self._capture_errors[name] = str(e)
 
     def _write_wav(self, path: str, audio: np.ndarray) -> None:
         with wave.open(path, "wb") as wf:

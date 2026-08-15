@@ -176,3 +176,85 @@ def test_capture_errors_surfaced_in_stop_result(tmp_path, monkeypatch):
     r = client.post("/record/stop", json={"sessionId": sid})
     assert r.status_code == 200
     assert r.json()["captureErrors"] == {"pc": "device disconnected"}
+
+
+def test_audio_devices_endpoint_returns_mic_and_speakers(monkeypatch):
+    """GET /audio/devices は soundcard の全マイク・スピーカーを返す"""
+    import soundcard as sc
+
+    class FakeMic:
+        def __init__(self, id, name):
+            self.id, self.name = id, name
+
+    class FakeSpk:
+        def __init__(self, id, name):
+            self.id, self.name = id, name
+
+    monkeypatch.setattr(
+        sc,
+        "all_microphones",
+        lambda: [FakeMic("mic-id-1", "BT JM19"), FakeMic("mic-id-2", "Realtek")],
+    )
+    monkeypatch.setattr(sc, "all_speakers", lambda: [FakeSpk("spk-id-1", "Speaker")])
+    r = client.get("/audio/devices")
+    assert r.status_code == 200
+    body = r.json()
+    assert any(
+        m["id"] == "mic-id-1" and m["name"] == "BT JM19" for m in body["microphones"]
+    )
+    assert any(
+        m["id"] == "mic-id-2" and m["name"] == "Realtek" for m in body["microphones"]
+    )
+    assert body["speakers"][0]["id"] == "spk-id-1"
+    assert body["speakers"][0]["name"] == "Speaker"
+
+
+def test_audio_devices_endpoint_handles_soundcard_failure(monkeypatch):
+    """soundcard の列挙が例外を投げても /audio/devices は空配列で 200 を返す"""
+    import soundcard as sc
+
+    monkeypatch.setattr(
+        sc, "all_microphones", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    monkeypatch.setattr(sc, "all_speakers", lambda: [])
+    r = client.get("/audio/devices")
+    assert r.status_code == 200
+    assert r.json() == {"microphones": [], "speakers": []}
+
+
+def test_record_start_with_explicit_mic_device_id(tmp_path, monkeypatch):
+    """micDeviceId 指定で get_microphone(id, ...) が呼ばれ、default_microphone は呼ばれない"""
+    import soundcard as sc
+
+    monkeypatch.setattr("config.TMP_DIR", str(tmp_path))
+    called = {"name": None, "loopback": None}
+
+    class FakeMic:
+        def __init__(self, name):
+            self.name = name
+
+        def recorder(self, samplerate, channels):
+            raise RuntimeError("stop via _capture_errors injection")
+
+    def fake_get_microphone(name, include_loopback):
+        called["name"] = name
+        called["loopback"] = include_loopback
+        return FakeMic(name)
+
+    monkeypatch.setattr(sc, "get_microphone", fake_get_microphone)
+    monkeypatch.setattr(
+        sc,
+        "default_microphone",
+        lambda: (_ for _ in ()).throw(AssertionError("default should not be called")),
+    )
+
+    r = client.post(
+        "/record/start",
+        json={"format": "wav", "audioSource": "mic", "micDeviceId": "bt-jm19-id"},
+    )
+    assert r.status_code == 200
+    assert called["name"] == "bt-jm19-id"
+    assert called["loopback"] is False
+    # レスポンスに micDeviceId が回顧される
+    body = r.json()
+    assert body["micDeviceId"] == "bt-jm19-id"
