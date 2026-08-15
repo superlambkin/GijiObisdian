@@ -93,6 +93,14 @@ export interface GijiSettings {
   audioSource: AudioSourceId;
   recordingMethod: RecordingMethodId;
   appendRecordEnabled: boolean;
+  /** ブリッジ録音時に使うマイクデバイス ID（soundcard の id フィールド）。空文字ならシステム既定 */
+  bridgeMicDeviceId: string;
+  /** ブリッジ録音時に使うスピーカーデバイス ID（pcLoopback/mix 用）。空文字ならシステム既定 */
+  bridgeSpeakerDeviceId: string;
+  /** PC ダイレクト録音時に getUserMedia に渡すマイク deviceId。空文字ならシステム既定 */
+  directMicDeviceId: string;
+  /** PC ダイレクト録音時のスピーカー指定（getUserMedia は出力デバイスを受け取らないため現状は保存のみ） */
+  directSpeakerDeviceId: string;
   // ② 文字起こし（保存・挿入）
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
@@ -144,8 +152,12 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
   audioSource: "mix",
-  recordingMethod: "bridge",
+  recordingMethod: "direct",
   appendRecordEnabled: true,
+  bridgeMicDeviceId: "",
+  bridgeSpeakerDeviceId: "",
+  directMicDeviceId: "",
+  directSpeakerDeviceId: "",
   autoSaveTranscript: true,
   transcriptSaveDir: "議事録",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",
@@ -155,8 +167,10 @@ export const DEFAULT_SETTINGS: GijiSettings = {
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { openRecordingFilePicker } from "./commands/transcribeFile";
 import { runSttTest } from "./test/sttTest";
 import { runLlmTest } from "./test/llmTest";
+import { listDevices, DeviceListResult } from "./audio/deviceList";
 import {
   LlmPresetId,
   LLM_PRESETS,
@@ -285,6 +299,14 @@ export class GijiSettingsTab extends PluginSettingTab {
             s.recordingMethod = v as RecordingMethodId;
             await this.save();
             updateBridgeDisabled(v);
+            // v0.5: 手法切替時は対応モードのデバイス ID 表示に切替＋一覧を最新化
+            micDeviceDropdown?.setValue(
+              (s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId) || ""
+            );
+            speakerDeviceDropdown?.setValue(
+              (s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId) || ""
+            );
+            void repopulateDevices();
           })
       );
 
@@ -306,6 +328,84 @@ export class GijiSettingsTab extends PluginSettingTab {
             s.audioSource = v as AudioSourceId;
             await this.save();
           });
+      });
+
+    // v0.5: デバイス選択（マイク + スピーカー）
+    //   - recordingMethod === "bridge" → ブリッジの GET /audio/devices を使う
+    //   - bridge 不可達・direct → navigator.mediaDevices.enumerateDevices()
+    //   - いずれも失敗 → ドロップダウンに「（デバイス一覧未取得）」とだけ表示
+    let micDeviceSetting: Setting;
+    let speakerDeviceSetting: Setting;
+    let micDeviceDropdown: any;
+    let speakerDeviceDropdown: any;
+    let refreshDevicesButton: any;
+
+    const repopulateDevices = async () => {
+      const got: DeviceListResult = await listDevices(s);
+      // マイク側を再構築
+      micDeviceDropdown.selectEl.innerHTML = "";
+      micDeviceDropdown.addOption("", "（システム既定）");
+      for (const m of got.microphones) micDeviceDropdown.addOption(m.id, m.name || m.id);
+      const currentMicId = s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId;
+      micDeviceDropdown.setValue(currentMicId || "");
+      // スピーカー側を再構築
+      speakerDeviceDropdown.selectEl.innerHTML = "";
+      speakerDeviceDropdown.addOption("", "（システム既定）");
+      for (const sp of got.speakers) speakerDeviceDropdown.addOption(sp.id, sp.name || sp.id);
+      const currentSpkId = s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId;
+      speakerDeviceDropdown.setValue(currentSpkId || "");
+      // desc 更新
+      const micDesc =
+        got.source === "bridge"
+          ? `ブリッジから取得（${got.microphones.length} マイク / ${got.speakers.length} スピーカー）`
+          : got.source === "direct"
+            ? `ブラウザから取得（direct モード用）`
+            : "（bridge 停止中・enumerateDevices も利用不可）";
+      micDeviceSetting.setDesc(`録音に使うマイクデバイスを選択します。${micDesc}`);
+      speakerDeviceSetting.setDesc(
+        s.recordingMethod === "direct"
+          ? "PC ダイレクト録音ではスピーカー制御不可（getUserMedia は入力のみ対応）"
+          : "ブリッジ録音で PC 音声キャプチャに使われるスピーカーを選択します（pcLoopback / mix 用）"
+      );
+    };
+
+    micDeviceSetting = new Setting(content)
+      .setName("🎤 録音用マイクデバイス")
+      .setDesc("録音に使うマイクデバイスを選択します（初回は「🔄 デバイス一覧を更新」を押してください）")
+      .addDropdown((d) => {
+        micDeviceDropdown = d;
+        d.addOption("", "（システム既定）").setValue(
+          (s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId) || ""
+        ).onChange(async (v: string) => {
+          if (s.recordingMethod === "bridge") s.bridgeMicDeviceId = v;
+          else s.directMicDeviceId = v;
+          await this.save();
+        });
+      })
+      .addButton((b) => {
+        refreshDevicesButton = b;
+        b.setButtonText("🔄 デバイス一覧を更新").onClick(async () => {
+          b.setDisabled(true).setButtonText("更新中…");
+          try {
+            await repopulateDevices();
+          } finally {
+            b.setDisabled(false).setButtonText("🔄 デバイス一覧を更新");
+          }
+        });
+      });
+
+    speakerDeviceSetting = new Setting(content)
+      .setName("🔊 録音用スピーカーデバイス（pcLoopback / mix 用）")
+      .setDesc("ブリッジ録音で PC 音声キャプチャに使われるスピーカーを選択します")
+      .addDropdown((d) => {
+        speakerDeviceDropdown = d;
+        d.addOption("", "（システム既定）").setValue(
+          (s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId) || ""
+        ).onChange(async (v: string) => {
+          if (s.recordingMethod === "bridge") s.bridgeSpeakerDeviceId = v;
+          else s.directSpeakerDeviceId = v;
+          await this.save();
+        });
       });
 
     new Setting(content)
@@ -333,6 +433,12 @@ export class GijiSettingsTab extends PluginSettingTab {
       audioMode?.setDisabled(disabled);
       bridgeUrl?.setDisabled(disabled);
       bridgeDir?.setDisabled(disabled);
+      // v0.5: マイクドロップダウンは両モードで使うため常時有効、
+      // スピーカードロップダウンは direct モードでは getUserMedia が出力デバイスを
+      // 受け取らないためグレーアウトする
+      micDeviceDropdown?.setDisabled(false);
+      speakerDeviceDropdown?.setDisabled(disabled);
+      refreshDevicesButton?.setDisabled(false);
     };
     updateBridgeDisabled(s.recordingMethod);
 
@@ -492,6 +598,18 @@ export class GijiSettingsTab extends PluginSettingTab {
             btn.setDisabled(false).setButtonText("テスト開始");
           }
         })
+      );
+
+    new Setting(content)
+      .setName("📂 録音ファイルを開いて文字起こし")
+      .setDesc("PC 上の録音ファイル（wav / mp3 / m4a / flac / ogg）を選び、現在の ② 文字起こし設定で転写して転写 MD を自動保存します")
+      .addButton((btn) =>
+        btn
+          .setButtonText("📂 録音ファイルを開いて文字起こし")
+          .setCta()
+          .onClick(() => {
+            void openRecordingFilePicker(this.app, s);
+          })
       );
 
     new Setting(content)

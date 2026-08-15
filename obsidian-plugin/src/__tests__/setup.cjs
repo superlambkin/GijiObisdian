@@ -22,7 +22,38 @@ const obsidianStub = {
     setDesc() {
       return this;
     }
-    addDropdown() {
+    setHeading() {
+      return this;
+    }
+    addDropdown(cb) {
+      // v0.5: deviceList テスト用に、_options 記録 + selectEl.innerHTML リセット + setValue/onChange/setDisabled を
+      // チェーナブルに保つダミー DropdownComponent を渡す。
+      const dropdown = {
+        _options: [],
+        _value: "",
+        _disabled: false,
+        _onChange: null,
+        selectEl: {
+          innerHTML: "",
+        },
+        addOption(value, label) {
+          this._options.push({ value, label });
+          return this;
+        },
+        setValue(v) {
+          this._value = v;
+          return this;
+        },
+        onChange(fn) {
+          this._onChange = fn;
+          return this;
+        },
+        setDisabled(b) {
+          this._disabled = b;
+          return this;
+        },
+      };
+      cb(dropdown);
       return this;
     }
     addText() {
@@ -57,6 +88,11 @@ const obsidianStub = {
           this._onClick = fn;
           if (!self._buttons) self._buttons = [];
           self._buttons.push(this);
+          // el（contentEl）側にも累積記録し、同一 content 内の全ボタンを一覧取得できるようにする
+          if (self.el) {
+            if (!self.el._buttons) self.el._buttons = [];
+            self.el._buttons.push(this);
+          }
           return this;
         },
       };

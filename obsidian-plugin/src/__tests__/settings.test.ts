@@ -35,7 +35,14 @@ test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{year}}"));
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{second}}"));
   assert.equal(DEFAULT_SETTINGS.audioSource, "mix");
-  assert.equal(DEFAULT_SETTINGS.recordingMethod, "bridge");
+  assert.equal(DEFAULT_SETTINGS.recordingMethod, "direct");
+});
+
+test("DEFAULT_SETTINGS has device id fields (empty by default)", () => {
+  assert.equal(DEFAULT_SETTINGS.bridgeMicDeviceId, "");
+  assert.equal(DEFAULT_SETTINGS.bridgeSpeakerDeviceId, "");
+  assert.equal(DEFAULT_SETTINGS.directMicDeviceId, "");
+  assert.equal(DEFAULT_SETTINGS.directSpeakerDeviceId, "");
 });
 
 test("DEFAULT_SETTINGS has new feature flags", () => {
@@ -184,4 +191,23 @@ test("isLocalSttProvider categorizes providers", () => {
   assert.equal(isLocalSttProvider("whisper-small"), true);
   assert.equal(isLocalSttProvider("openai"), false);
   assert.equal(isLocalSttProvider("groq"), false);
+});
+
+test("renderTranscriptTab adds 録音ファイルを開いて文字起こし button after 接続テスト", () => {
+  const plugin = {
+    settings: { ...DEFAULT_SETTINGS },
+    saveSettings: async () => {},
+    manifest: { version: "0.0.0", dir: "" },
+  };
+  const tab = new GijiSettingsTab({} as any, plugin as any);
+  const content: any = {};
+  tab.renderTranscriptTab(content);
+  const texts = (content._buttons ?? []).map((b: any) => b._text);
+  const idx = texts.indexOf("テスト開始");
+  const btnIdx = texts.indexOf("📂 録音ファイルを開いて文字起こし");
+  assert.ok(idx !== -1, "接続テスト button should exist");
+  assert.ok(btnIdx !== -1, "録音ファイルを開いて文字起こし button should exist");
+  assert.ok(btnIdx > idx, "録音ファイルを開いて文字起こし should be after テスト開始");
+  const btn = content._buttons[btnIdx];
+  assert.equal(typeof btn._onClick, "function");
 });
