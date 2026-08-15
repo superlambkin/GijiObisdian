@@ -100,5 +100,9 @@ export function openRecordingFilePicker(app: App, settings: GijiSettings): void 
       new Notice(`❌ 転写に失敗しました: ${err?.message ?? err}`);
     }
   };
+  // Electron では DOM 未接続の input.click() がファイルダイアログを開かないため、
+  // body に接続してから click → 完了後に除去する。
+  document.body.appendChild(input);
   input.click();
+  document.body.removeChild(input);
 }

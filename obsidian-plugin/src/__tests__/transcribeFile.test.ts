@@ -122,13 +122,29 @@ test("transcribeAndSaveAudioFile propagates STT errors", async () => {
   );
 });
 
-test("openRecordingFilePicker creates an audio file input and clicks it", () => {
-  let clicked = false;
+test("openRecordingFilePicker attaches input to body, clicks, then detaches", () => {
+  const order: string[] = [];
   let input: any = null;
   (globalThis as any).document = {
+    body: {
+      appendChild(el: any) {
+        order.push("attach");
+        assert.equal(el, input);
+      },
+      removeChild(el: any) {
+        order.push("detach");
+        assert.equal(el, input);
+      },
+    },
     createElement(tag: string) {
       assert.equal(tag, "input");
-      input = { type: "", accept: "", click() { clicked = true; } };
+      input = {
+        type: "",
+        accept: "",
+        click() {
+          order.push("click");
+        },
+      };
       return input;
     },
   };
@@ -141,7 +157,7 @@ test("openRecordingFilePicker creates an audio file input and clicks it", () => 
     assert.equal(input.type, "file");
     assert.ok(input.accept.includes(".mp3"));
     assert.ok(input.accept.includes("audio/*"));
-    assert.equal(clicked, true);
+    assert.deepEqual(order, ["attach", "click", "detach"]); // body 接続→click→除去 の順
   } finally {
     delete (globalThis as any).document;
   }
