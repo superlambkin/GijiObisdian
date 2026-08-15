@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
 import { startSegment, stopSegment } from "./commands/recordSegment";
 import { isTranscriptNote, summarizeFromNote } from "./commands/summarizeNote";
 import { importAudioFlow } from "./ui/filePicker";
+import { openRecordingFilePicker } from "./commands/transcribeFile";
 import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
 import { RecordingTimer } from "./ui/recordingTimer";
@@ -48,6 +49,11 @@ export default class GijiPlugin extends Plugin {
       id: "import-audio",
       name: "导入音频生成会议纪要",
       callback: () => importAudioFlow(this.app, this.settings, this.manifest.dir),
+    });
+
+    // リボン: 録音ファイルを開いて文字起こし（設定画面ボタンから移設）
+    this.addRibbonIcon("file-audio", "録音ファイルを開いて文字起こし", () => {
+      void openRecordingFilePicker(this.app, this.settings);
     });
 
     // 録音MD の右クリックメニューに「議事録要約」を追加

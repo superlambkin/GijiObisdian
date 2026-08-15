@@ -167,7 +167,6 @@ export const DEFAULT_SETTINGS: GijiSettings = {
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { openRecordingFilePicker } from "./commands/transcribeFile";
 import { runSttTest } from "./test/sttTest";
 import { runLlmTest } from "./test/llmTest";
 import { listDevices, DeviceListResult } from "./audio/deviceList";
@@ -598,18 +597,6 @@ export class GijiSettingsTab extends PluginSettingTab {
             btn.setDisabled(false).setButtonText("テスト開始");
           }
         })
-      );
-
-    new Setting(content)
-      .setName("📂 録音ファイルを開いて文字起こし")
-      .setDesc("PC 上の録音ファイル（wav / mp3 / m4a / flac / ogg）を選び、現在の ② 文字起こし設定で転写して転写 MD を自動保存します")
-      .addButton((btn) =>
-        btn
-          .setButtonText("📂 録音ファイルを開いて文字起こし")
-          .setCta()
-          .onClick(() => {
-            void openRecordingFilePicker(this.app, s);
-          })
       );
 
     new Setting(content)
