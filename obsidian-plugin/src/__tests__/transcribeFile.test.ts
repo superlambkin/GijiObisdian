@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS } from "../settings";
 import {
   transcribeAndSaveAudioFile,
+  transcribeAndSaveAudioFiles,
   openRecordingFilePicker,
   AudioFileLike,
 } from "../commands/transcribeFile";
@@ -156,9 +157,67 @@ test("openRecordingFilePicker attaches input to body, clicks, then detaches", ()
     openRecordingFilePicker(app, DEFAULT_SETTINGS);
     assert.equal(input.type, "file");
     assert.ok(input.accept.includes(".mp3"));
-    assert.ok(input.accept.includes("audio/*"));
+    assert.ok(input.accept.includes("audio/wav"));
+    assert.ok(input.accept.includes("audio/mp4"));
     assert.deepEqual(order, ["attach", "click", "detach"]); // body 接続→click→除去 の順
   } finally {
     delete (globalThis as any).document;
   }
+});
+
+test("transcribeAndSaveAudioFiles merges successful files in lastModified order", async () => {
+  const { app, created } = makeVault();
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "議事録" };
+  const files = [
+    makeFile({ name: "b.m4a", lastModified: new Date("2026-08-19T14:40:00").getTime() }),
+    makeFile({ name: "a.m4a", lastModified: new Date("2026-08-19T13:27:00").getTime() }),
+    makeFile({ name: "c.m4a", lastModified: new Date("2026-08-19T15:46:00").getTime() }),
+  ];
+
+  const result = await transcribeAndSaveAudioFiles(app, settings, files, {
+    validate: async () => ({ ok: true, format: "m4a" }),
+    convert: async () => new ArrayBuffer(100),
+    transcribe: async () => "本文",
+    concurrency: 1,
+  });
+
+  assert.equal(created.length, 1);
+  const content = created[0].content;
+  assert.ok(content.indexOf("a.m4a") < content.indexOf("b.m4a"));
+  assert.ok(content.indexOf("b.m4a") < content.indexOf("c.m4a"));
+  assert.equal(result.failed.length, 0);
+});
+
+test("transcribeAndSaveAudioFiles records invalid files and creates no note when all fail", async () => {
+  const { app, created } = makeVault();
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "議事録" };
+  const files = [makeFile({ name: "bad1.mp3" }), makeFile({ name: "bad2.mp3" })];
+
+  const result = await transcribeAndSaveAudioFiles(app, settings, files, {
+    validate: async () => ({ ok: false, error: "unsupported" }),
+    concurrency: 1,
+  });
+
+  assert.equal(created.length, 0);
+  assert.equal(result.failed.length, 2);
+  assert.match(result.failed.join("\n"), /bad1\.mp3/);
+});
+
+test("transcribeAndSaveAudioFiles includes failure table for partial success", async () => {
+  const { app, created } = makeVault();
+  const settings = { ...DEFAULT_SETTINGS, transcriptSaveDir: "議事録" };
+  const files = [makeFile({ name: "good.mp3" }), makeFile({ name: "bad.m4a" })];
+
+  await transcribeAndSaveAudioFiles(app, settings, files, {
+    validate: async (file) => file.name === "bad.m4a"
+      ? { ok: false, error: "invalid format" }
+      : { ok: true, format: "mp3" },
+    convert: async () => new ArrayBuffer(100),
+    transcribe: async () => "ok",
+    concurrency: 1,
+  });
+
+  assert.equal(created.length, 1);
+  assert.match(created[0].content, /一部ファイルの文字起こしに失敗/);
+  assert.match(created[0].content, /bad\.m4a/);
 });
