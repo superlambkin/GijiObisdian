@@ -594,6 +594,20 @@ export class GijiSettingsTab extends PluginSettingTab {
       );
 
     new Setting(content)
+      .setName("STT 送信並列度")
+      .setDesc("OpenAI Whisper への同時送信数（1〜4）。初期値は 2")
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 4, 1)
+          .setValue(s.sttMaxConcurrency)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            s.sttMaxConcurrency = clampSttConcurrency(value);
+            await this.save();
+          })
+      );
+
+    new Setting(content)
       .setName("🔌 接続テスト")
       .setDesc("内蔵の音声サンプルで ② 文字起こしの設定が使えるか検証します")
       .addButton((btn) =>
