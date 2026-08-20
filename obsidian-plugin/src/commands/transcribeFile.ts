@@ -229,10 +229,22 @@ export function openRecordingFilePicker(app: App, settings: GijiSettings): void 
     const fileList = input.files;
     if (!fileList || fileList.length === 0) return;
     try {
-      new Notice(`文字起こし中: ${fileList.length} ファイルを処理します…`);
+      // 進捗 Notice は永続化（duration: 0 = 完了まで表示）。
+      // FFmpeg 初回起動 10〜30 秒 + 変換 + STT に耐えうる必要があるため。
+      // 成功・失敗 Notice で上書きされる。
+      const progress = new Notice(
+        `⏳ 文字起こし中: ${fileList.length} ファイルを処理しています…\n（初回 FFmpeg 起動は数十秒かかる場合があります）`,
+        0
+      );
       const result = await transcribeAndSaveAudioFiles(app, settings, Array.from(fileList));
+      // 完了したら進捗 Notice を明示的に閉じる（hide() メソッドは Obsidian 1.5+）
+      try {
+        progress.hide();
+      } catch {
+        // hide() 非対応版では握りつぶし
+      }
       if (result.path) {
-        new Notice(`✅ 転写を保存しました: ${result.path}`);
+        new Notice(`✅ 転写を保存しました: ${result.path}`, 6000);
         if (result.failed.length > 0) {
           // 失敗したファイル名とエラー内容を Notice に展開（デバッグ容易化）
           for (const fail of result.failed) {

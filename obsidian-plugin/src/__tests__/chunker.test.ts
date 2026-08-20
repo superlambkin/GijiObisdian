@@ -107,3 +107,71 @@ test("splitForTranscription: mp3 splits by provider maxBytes at syncs", () => {
   const chunks = splitForTranscription(makeMp3(10), { maxBytesPerRequest: 576 * 2 });
   assert.ok(chunks.length >= 5);
 });
+
+/* ---------------- 非標準ヘッダ（LIST/INFO chunk） ---------------- */
+
+/**
+ * FFmpeg が生成する実際の WAV は、fmt と data の間に LIST / INFO 等の
+ * メタデータチャンクを含む場合がある。その場合でも data chunk の
+ * offset/length を正しく検出できるかを検証する。
+ */
+function makeWavWithListChunk(seconds: number, rate = 16000): ArrayBuffer {
+  const dataLen = rate * seconds * 2;
+  // LIST チャンクの例: "LIST" + size + "INFO" + メタデータ
+  // サイズ 8 の INFO サブチャンク（中身は "ICMT" + size 0）
+  const listPayload = Buffer.from("INFOICMT", "ascii");
+  const listSize = 4 + listPayload.length; // INFO + payload (size 8 + 0)
+  const headerLen = 44 + 8 + listSize + (listSize % 2);
+  const buffer = new ArrayBuffer(headerLen + dataLen);
+  const view = new DataView(buffer);
+  const writeStr = (o: number, s: string) =>
+    s.split("").forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+  // RIFF/WAVE
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + headerLen - 44 + dataLen, true);
+  writeStr(8, "WAVE");
+  // fmt
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  // LIST
+  writeStr(36, "LIST");
+  view.setUint32(40, listSize, true);
+  writeStr(44, "INFO");
+  for (let i = 0; i < listPayload.length; i++) {
+    view.setUint8(48 + i, listPayload[i]);
+  }
+  // data
+  const dataOffset = 36 + 8 + listSize + (listSize % 2);
+  writeStr(dataOffset, "data");
+  view.setUint32(dataOffset + 4, dataLen, true);
+  return buffer;
+}
+
+test("splitWavByBytes: handles LIST chunk before data chunk", () => {
+  // 10 秒 (320000B) の LIST 付き WAV を 100,000B ごとに分割
+  const wav = makeWavWithListChunk(10);
+  // data chunk が本当に offset 36+8+listSize にあることを確認
+  const v = new DataView(wav);
+  const dataTagOffset = 36 + 8 + 12;
+  assert.equal(
+    String.fromCharCode(v.getUint8(dataTagOffset), v.getUint8(dataTagOffset + 1), v.getUint8(dataTagOffset + 2), v.getUint8(dataTagOffset + 3)),
+    "data",
+    "data チャンクが LIST の後に存在することを確認"
+  );
+  const chunks = splitWavByBytes(wav, 100_000);
+  assert.ok(chunks.length >= 3, `LIST 付き WAV も分割されること（実際: ${chunks.length}）`);
+  for (const c of chunks) {
+    assert.ok(isWav(c), "チャンクは有効な WAV");
+  }
+});
+
+test("splitWavByBytes: legacy 44-byte header still works", () => {
+  const chunks = splitWavByBytes(makeWav(10), 100_000);
+  assert.equal(chunks.length, 4);
+});

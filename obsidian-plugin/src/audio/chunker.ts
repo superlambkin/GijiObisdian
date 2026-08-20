@@ -3,12 +3,68 @@ const HEADER_LEN = 44;
 /** OpenAI Whisper の 25MB 制限に対し、24MB 以上は分割して文字起こしする */
 export const MAX_TRANSCRIPTION_BYTES = 24_000_000;
 
+/**
+ * WAV の RIFF チャンク構造を線形スキャンし、sampleRate / data チャンクの
+ * offset/length を取得する。
+ *
+ * 標準 PCM WAV は RIFF/WAVE/fmt /data の順で 44 バイトだが、FFmpeg や
+ * 他のエンコーダは LIST / INFO / JUNK 等のメタデータチャンクを fmt と
+ * data の間に挟む場合がある。その場合でも "data" タグを線形検索して
+ * 正しく分割できるよう、本実装ではチャンク単位のパースを行う。
+ */
 function readHeader(view: DataView) {
-  return {
-    sampleRate: view.getUint32(24, true),
-    dataOffset: HEADER_LEN,
-    dataLength: view.getUint32(40, true),
-  };
+  const bytes = new Uint8Array(view.buffer);
+  // RIFF シグネチャ確認
+  if (
+    bytes[0] !== 0x52 || bytes[1] !== 0x49 || bytes[2] !== 0x46 || bytes[3] !== 0x46 ||
+    bytes[8] !== 0x57 || bytes[9] !== 0x41 || bytes[10] !== 0x56 || bytes[11] !== 0x45
+  ) {
+    throw new Error("not a RIFF/WAVE file");
+  }
+
+  // fmt チャンクを探して sampleRate を取得
+  let sampleRate = 0;
+  let dataOffset = 0;
+  let dataLength = 0;
+  let foundFmt = false;
+  let foundData = false;
+
+  // RIFF の先頭 12 バイトを飛ばし、残りをチャンクとして走査
+  let cursor = 12;
+  while (cursor + 8 <= view.byteLength) {
+    const tag = String.fromCharCode(
+      bytes[cursor],
+      bytes[cursor + 1],
+      bytes[cursor + 2],
+      bytes[cursor + 3]
+    );
+    const size = view.getUint32(cursor + 4, true);
+    const valueOffset = cursor + 8;
+    if (tag === "fmt ") {
+      // sample rate は fmt チャンクの先頭 +4..+7 (LE) にある
+      if (size >= 8) sampleRate = view.getUint32(valueOffset + 4, true);
+      foundFmt = true;
+    } else if (tag === "data") {
+      dataOffset = valueOffset;
+      dataLength = size;
+      foundData = true;
+      break; // data が先頭にあるとは限らないので最初に見つかった data を使う
+    }
+    // チャンクはワード境界に揃えられる（奇数サイズなら +1 パディング）
+    cursor = valueOffset + size + (size % 2);
+  }
+
+  // フォールバック: 旧形式（44 バイト決め打ち）の互換性維持。
+  // ※ テストや旧エンコーダが fmt/data タグを書かない最小 WAV を出力する場合のため。
+  if (!foundFmt && sampleRate === 0) {
+    sampleRate = view.getUint32(24, true);
+  }
+  if (!foundData) {
+    dataOffset = HEADER_LEN;
+    dataLength = view.getUint32(40, true);
+  }
+
+  return { sampleRate, dataOffset, dataLength };
 }
 
 /** WAV ヘッダ情報を読み取る（Google STT 等で PCM 抽出に使用） */
@@ -26,13 +82,28 @@ export function isWav(buf: ArrayBuffer): boolean {
   );
 }
 
-function buildWav(headerBytes: Uint8Array, pcm: Uint8Array): ArrayBuffer {
+function buildWav(headerBytes: Uint8Array, pcm: Uint8Array, dataOffset: number): ArrayBuffer {
+  // 分割後の WAV は data チャンク単一のシンプルな構造に再構築する。
+  // 元のヘッダ（fmt 等のサブチャンク）は破棄し、新しい 44 バイト標準ヘッダで置き換える。
   const out = new Uint8Array(HEADER_LEN + pcm.length);
-  out.set(headerBytes.slice(0, HEADER_LEN), 0);
-  out.set(pcm, HEADER_LEN);
+  // RIFF マジック
+  out[0] = 0x52; out[1] = 0x49; out[2] = 0x46; out[3] = 0x46;
+  // RIFF サイズ（LE）
   const v = new DataView(out.buffer);
-  v.setUint32(4, 36 + pcm.length, true); // RIFF size
-  v.setUint32(40, pcm.length, true);      // data size
+  v.setUint32(4, 36 + pcm.length, true);
+  // WAVE マジック
+  out[8] = 0x57; out[9] = 0x41; out[10] = 0x56; out[11] = 0x45;
+  // fmt チャンク
+  out[12] = 0x66; out[13] = 0x6d; out[14] = 0x74; out[15] = 0x20; // "fmt "
+  v.setUint32(16, 16, true);  // fmt chunk size
+  v.setUint16(20, 1, true);   // audio format = PCM
+  // channels/sample rate/byte rate/block align/bits per sample は元ヘッダからコピー
+  out.set(headerBytes.slice(20, 36), 20);
+  // data チャンク
+  out[36] = 0x64; out[37] = 0x61; out[38] = 0x74; out[39] = 0x61; // "data"
+  v.setUint32(40, pcm.length, true);
+  // PCM データ
+  out.set(pcm, HEADER_LEN);
   return out.buffer;
 }
 
@@ -51,7 +122,7 @@ export function splitWavByBytes(wav: ArrayBuffer, maxBytes: number): ArrayBuffer
   const step = Math.max(2, Math.floor(maxBytes / 2) * 2);
   for (let off = 0; off < pcm.length; off += step) {
     const slice = pcm.slice(off, Math.min(off + step, pcm.length));
-    chunks.push(buildWav(header, slice));
+    chunks.push(buildWav(header, slice, dataOffset));
   }
   return chunks;
 }
