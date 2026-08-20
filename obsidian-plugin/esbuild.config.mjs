@@ -25,11 +25,13 @@ const ffmpegAssets = {
       // 生成された main.js 内の `var import_meta* = {};` を Node の
       // `pathToFileURL(__filename).href` でパッチする。@ffmpeg/ffmpeg 内の
       // Worker 初期化（new URL("./worker.js", import_meta.url)）にも必要。
+      // ※ キャプチャグループで変数名（import_meta / import_meta2 など）を保持し、
+      //    esbuild がソース側で参照する同名変数を残す。
       const mainJsPath = resolve(root, "main.js");
       const content = await readFile(mainJsPath, "utf-8");
       const patched = content.replace(
-        /var import_meta\d* = \{\};/g,
-        `var import_meta = { url: require('url').pathToFileURL(__filename).href };`
+        /var (import_meta\d*) = \{\};/g,
+        `var $1 = { url: require('url').pathToFileURL(__filename).href };`
       );
       if (patched !== content) await writeFile(mainJsPath, patched, "utf-8");
     });
