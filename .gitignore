@@ -5,4 +5,6 @@ __pycache__/
 .venv/
 venv/
 main.js
+ffmpeg-core.js
+ffmpeg-core.wasm
 *.tsbuildinfo

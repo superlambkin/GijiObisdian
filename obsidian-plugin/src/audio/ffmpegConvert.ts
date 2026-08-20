@@ -15,8 +15,10 @@ export async function convertToWav16kMono(file: AudioFileLike): Promise<ArrayBuf
   const outputName = `output-${Date.now()}.wav`;
 
   try {
-    const coreURL = new URL("@ffmpeg/core/dist/esm/ffmpeg-core.js", import.meta.url).href;
-    const wasmURL = new URL("@ffmpeg/core/dist/esm/ffmpeg-core.wasm", import.meta.url).href;
+    // esbuildは .wasm を自動配置しないため、ffmpegConvert.mts の esbuild pluginで
+    // main.js と同じディレクトリへコピーしたローカル資産を参照する。
+    const coreURL = new URL("./ffmpeg-core.js", import.meta.url).href;
+    const wasmURL = new URL("./ffmpeg-core.wasm", import.meta.url).href;
     if (!ff.loaded) await ff.load({ coreURL, wasmURL });
 
     await ff.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
