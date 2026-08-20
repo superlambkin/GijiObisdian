@@ -7,4 +7,5 @@ venv/
 main.js
 ffmpeg-core.js
 ffmpeg-core.wasm
+worker.js
 *.tsbuildinfo

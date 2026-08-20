@@ -198,11 +198,17 @@ export function openRecordingFilePicker(app: App, settings: GijiSettings): void 
       const result = await transcribeAndSaveAudioFiles(app, settings, Array.from(fileList));
       if (result.path) {
         new Notice(`✅ 転写を保存しました: ${result.path}`);
-        if (result.failed.length > 0) new Notice(`⚠️ ${result.failed.length} 件のファイルに失敗しました`, 5000);
+        if (result.failed.length > 0) {
+          // 失敗したファイル名とエラー内容を Notice に展開（デバッグ容易化）
+          for (const fail of result.failed) {
+            new Notice(`⚠️ 失敗: ${fail}`, 8000);
+          }
+        }
         const tfile = app.vault.getAbstractFileByPath(result.path);
         if (tfile instanceof TFile) await app.workspace.getLeaf(false).openFile(tfile);
       } else {
-        new Notice(`❌ 全件失敗: ノートを作成しませんでした（${result.failed.length} 件）`);
+        const detail = result.failed.slice(0, 3).join("\n");
+        new Notice(`❌ 全件失敗（${result.failed.length} 件）:\n${detail}`, 10000);
       }
     } catch (err: any) {
       new Notice(`❌ 転写に失敗しました: ${err?.message ?? err}`);
