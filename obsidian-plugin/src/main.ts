@@ -11,6 +11,7 @@ import { injectRecordingStyles } from "./ui/recordingStyles";
 import { injectSettingsTabStyles } from "./ui/settingsTabsStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
 import { initLogRecorder, info as logInfo } from "./debug/logRecorder";
+import { setPluginContext } from "./audio/pluginContext";
 
 const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small"];
 export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
@@ -24,6 +25,8 @@ export default class GijiPlugin extends Plugin {
     await this.loadSettings();
     // ログレコーダーを早期初期化（以降の失敗記録のため）
     initLogRecorder(this.manifest.dir);
+    // FFmpeg 用に App 参照を共有（Blob URL 生成で必要）
+    setPluginContext(this.app, this.manifest.dir);
     logInfo("plugin", "onload", { version: this.manifest.version });
     // テンプレートフォルダをインストール先に作成し、デフォルトテンプレートを格納
     await ensureTemplatesDir(this.app, this.manifest.dir);

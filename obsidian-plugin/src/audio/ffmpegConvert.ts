@@ -2,12 +2,61 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { AudioFileLike } from "../commands/transcribeFile";
 import { isWav, splitWavByBytes } from "./chunker";
 import { debug as logDebug, info as logInfo, error as logError } from "../debug/logRecorder";
+import { getPluginApp } from "./pluginContext";
 
 let ffmpeg: FFmpeg | null = null;
 
 function getFfmpeg(): FFmpeg {
   if (!ffmpeg) ffmpeg = new FFmpeg();
   return ffmpeg;
+}
+
+interface FFmpegAssetURLs {
+  workerURL: string;
+  coreURL: string;
+  wasmURL: string;
+}
+
+let assetURLs: FFmpegAssetURLs | null = null;
+
+/**
+ * FFmpeg 関連アセット（worker.js / ffmpeg-core.js / ffmpeg-core.wasm）を
+ * Obsidian の app.vault.adapter.read で読み込み、Blob URL 化する。
+ *
+ * 理由: Obsidian の main world（app://obsidian.md）から file:// URL の Worker を
+ *       起動できないため、すべて Blob URL に統一して同一オリジンで動作させる。
+ */
+async function loadFFmpegAssetURLs(): Promise<FFmpegAssetURLs> {
+  if (assetURLs) return assetURLs;
+  const app = getPluginApp();
+  if (!app) {
+    throw new Error("plugin context not initialized (App reference missing)");
+  }
+  const adapter = app.vault.adapter;
+  const pluginId = "giji-obsidian";
+  const base = `.obsidian/plugins/${pluginId}`;
+  const [workerCode, coreCode, wasmBuffer] = await Promise.all([
+    adapter.read(`${base}/worker.js`),
+    adapter.read(`${base}/ffmpeg-core.js`),
+    adapter.readBinary(`${base}/ffmpeg-core.wasm`),
+  ]);
+  logDebug("ffmpegConvert", "asset bytes loaded", {
+    workerBytes: workerCode.length,
+    coreBytes: coreCode.length,
+    wasmBytes: (wasmBuffer as ArrayBuffer).byteLength,
+  });
+  const workerURL = URL.createObjectURL(
+    new Blob([workerCode], { type: "text/javascript" })
+  );
+  const coreURL = URL.createObjectURL(
+    new Blob([coreCode], { type: "text/javascript" })
+  );
+  const wasmURL = URL.createObjectURL(
+    new Blob([wasmBuffer as ArrayBuffer], { type: "application/wasm" })
+  );
+  assetURLs = { workerURL, coreURL, wasmURL };
+  logInfo("ffmpegConvert", "asset Blob URLs created", { workerURL, coreURL, wasmURL });
+  return assetURLs;
 }
 
 export async function convertToWav16kMono(file: AudioFileLike): Promise<ArrayBuffer> {
@@ -31,17 +80,19 @@ export async function convertToWav16kMono(file: AudioFileLike): Promise<ArrayBuf
   });
 
   try {
-    // esbuild は .wasm を自動配置しないため、ffmpegConvert.mts の esbuild pluginで
-    // main.js と同じディレクトリへコピーしたローカル資産を参照する。
-    // さらに esbuild の CJS 出力は import.meta.url を空オブジェクトにするため、
-    // esbuild.config.mjs の post-build patch でランタイム URL に置換済み。
-    const coreURL = new URL("./ffmpeg-core.js", import.meta.url).href;
-    const wasmURL = new URL("./ffmpeg-core.wasm", import.meta.url).href;
-    logDebug("ffmpegConvert", "URLs resolved", { coreURL, wasmURL, importMetaUrl: import.meta.url });
+    // Obsidian のセキュリティ制約により file:// URL の Worker は使えないため、
+    // plugin 内の 3 ファイルを Blob URL 化して同一オリジンで起動する。
+    const { workerURL, coreURL, wasmURL } = await loadFFmpegAssetURLs();
 
     if (!ff.loaded) {
       logInfo("ffmpegConvert", "ffmpeg.load starting", { coreURL, wasmURL });
-      await ff.load({ coreURL, wasmURL });
+      // classWorkerURL を Blob URL として渡すことで、FFmpeg ライブラリの Worker 解決を
+      // file:// → blob: に切替え、CSP 制約を回避する。
+      await ff.load({
+        classWorkerURL: workerURL,
+        coreURL,
+        wasmURL,
+      });
       logInfo("ffmpegConvert", "ffmpeg.load completed");
     } else {
       logDebug("ffmpegConvert", "ffmpeg already loaded, skipping load");
