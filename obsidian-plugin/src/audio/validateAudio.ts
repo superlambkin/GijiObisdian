@@ -11,12 +11,22 @@ export interface AudioValidationResult {
 export async function validateAudioFile(file: AudioFileLike): Promise<AudioValidationResult> {
   // 1. 拡張子チェック
   const ext = file.name.toLowerCase().split(".").pop() ?? "";
-  const allowed = ["wav", "mp3", "m4a"];
-  if (!allowed.includes(ext)) {
+  const allowed = ["wav", "mp3", "m4a"] as const;
+  if (!allowed.includes(ext as (typeof allowed)[number])) {
     return { ok: false, error: `unsupported extension: .${ext}` };
   }
 
-  // 2. サイズチェック
+  // 2. MIMEタイプチェック（File.type が空の場合は拡張子・シグネチャ検証へ進む）
+  const allowedMimeTypes: Record<AudioFormat, readonly string[]> = {
+    wav: ["audio/wav", "audio/x-wav"],
+    mp3: ["audio/mpeg", "audio/mp3"],
+    m4a: ["audio/mp4", "audio/x-m4a"],
+  };
+  if (file.type && !allowedMimeTypes[ext].includes(file.type.toLowerCase())) {
+    return { ok: false, error: `unsupported MIME type: ${file.type}` };
+  }
+
+  // 3. サイズチェック
   const buf = await file.arrayBuffer();
   if (buf.byteLength === 0) {
     return { ok: false, error: "empty or zero-byte file" };

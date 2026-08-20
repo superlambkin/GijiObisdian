@@ -70,6 +70,13 @@ test("validateAudioFile rejects unsupported extension", async () => {
   assert.match(result.error ?? "", /unsupported extension/);
 });
 
+test("validateAudioFile rejects mismatched MIME type when File.type is provided", async () => {
+  const file = makeFile({ name: "test.m4a", type: "audio/mpeg" });
+  const result = await validateAudioFile(file);
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /MIME/);
+});
+
 test("validateAudioFile rejects zero-byte file", async () => {
   const file = makeFile({
     arrayBuffer: async () => new ArrayBuffer(0),
