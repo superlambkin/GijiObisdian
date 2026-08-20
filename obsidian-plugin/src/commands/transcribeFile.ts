@@ -6,6 +6,7 @@ import { buildMp3Links } from "../notes/mp3Ref";
 import { validateAudioFile, AudioValidationResult } from "../audio/validateAudio";
 import { prepareChunksForStt } from "../audio/ffmpegConvert";
 import { transcribeWithRetry } from "../providers/sttRetry";
+import { info as logInfo, warn as logWarn, error as logError, debug as logDebug } from "../debug/logRecorder";
 
 /** File の互換インターフェース（テスト容易性） */
 export interface AudioFileLike {
@@ -106,25 +107,40 @@ export async function transcribeAndSaveAudioFiles(
     return byTime || a.name.localeCompare(b.name);
   });
 
+  logInfo("transcribeFiles", "start", {
+    count: sortedFiles.length,
+    concurrency,
+    sttProvider: settings.sttProvider,
+  });
+
   const validFiles: AudioFileLike[] = [];
   const results: BatchFileResult[] = [];
   const failed: string[] = [];
 
   for (const file of sortedFiles) {
+    logInfo("transcribeFiles", "processing file", {
+      name: file.name,
+      type: file.type,
+      lastModified: file.lastModified,
+    });
     const validation = await validate(file);
     if (!validation.ok) {
       const error = validation.error ?? "validation failed";
+      logWarn("transcribeFiles", "validation failed", { file: file.name, error });
       results.push({ file, error });
       failed.push(`${file.name}: ${error}`);
       continue;
     }
+    logDebug("transcribeFiles", "validation ok", { file: file.name, format: validation.format });
     validFiles.push(file);
 
     try {
+      logInfo("transcribeFiles", "convert start", { file: file.name });
       const rawChunks = await convert(file);
       const chunks = rawChunks instanceof ArrayBuffer
         ? [rawChunks]
         : Array.from(rawChunks);
+      logInfo("transcribeFiles", "convert ok", { file: file.name, chunks: chunks.length });
       const transcript = await transcribeWithRetry(chunks, settings, concurrency, {
         transcribe: deps.transcribe,
       });
@@ -132,13 +148,27 @@ export async function transcribeAndSaveAudioFiles(
         const error = transcript.failedChunks
           .map((item) => `チャンク${item.index + 1}: ${item.error ?? "失敗"}`)
           .join("; ");
+        logError("transcribeFiles", "transcribeWithRetry failed", undefined, {
+          file: file.name,
+          chunks: transcript.failedChunks.length,
+          error,
+        });
         results.push({ file, error });
         failed.push(`${file.name}: ${error}`);
       } else {
+        logInfo("transcribeFiles", "transcribe ok", {
+          file: file.name,
+          chunks: transcript.results.length,
+          chars: transcript.results.join("").length,
+        });
         results.push({ file, text: transcript.results.join("\n\n") });
       }
     } catch (err: any) {
       const error = err?.message ?? String(err);
+      logError("transcribeFiles", "convert or transcribe threw", err, {
+        file: file.name,
+        error,
+      });
       results.push({ file, error });
       failed.push(`${file.name}: ${error}`);
     }
@@ -147,6 +177,11 @@ export async function transcribeAndSaveAudioFiles(
   const successResults = results.filter((result): result is BatchFileResult & { text: string } =>
     typeof result.text === "string" && result.text.length > 0
   );
+  logInfo("transcribeFiles", "summary", {
+    total: sortedFiles.length,
+    success: successResults.length,
+    failed: failed.length,
+  });
   if (successResults.length === 0) return { failed };
 
   const failedResults = results.filter((result) => Boolean(result.error));

@@ -10,6 +10,7 @@ import { RecordingTimer } from "./ui/recordingTimer";
 import { injectRecordingStyles } from "./ui/recordingStyles";
 import { injectSettingsTabStyles } from "./ui/settingsTabsStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
+import { initLogRecorder, info as logInfo } from "./debug/logRecorder";
 
 const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small"];
 export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
@@ -21,6 +22,9 @@ export default class GijiPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // ログレコーダーを早期初期化（以降の失敗記録のため）
+    initLogRecorder(this.manifest.dir);
+    logInfo("plugin", "onload", { version: this.manifest.version });
     // テンプレートフォルダをインストール先に作成し、デフォルトテンプレートを格納
     await ensureTemplatesDir(this.app, this.manifest.dir);
 
