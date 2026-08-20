@@ -8,7 +8,13 @@
     "build": "node esbuild.config.mjs production",
     "test": "tsx --require ./src/__tests__/setup.cjs --test \"src/__tests__/**/*.test.ts\""
   },
-  "keywords": ["obsidian", "plugin", "meeting", "stt", "minutes"],
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "meeting",
+    "stt",
+    "minutes"
+  ],
   "author": "MiuMiu",
   "license": "MIT",
   "devDependencies": {
@@ -19,5 +25,10 @@
     "tslib": "^2.6.2",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2"
   }
 }
