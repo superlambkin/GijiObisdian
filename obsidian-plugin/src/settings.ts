@@ -55,6 +55,8 @@ export interface GijiSettings {
   /** 🔜 qwen3-asr モデル名（既定 qwen3-asr-0.6b） */
   sttModel: string;
   sttLang: SttLang;
+  /** STT 送信の並列度（1〜4）。デフォルト 2 */
+  sttMaxConcurrency: number;
   /** STT provider 別に保存した API キープロファイル */
   sttProviderProfiles?: Record<string, SttProviderProfile>;
   // ③ 要約
@@ -119,6 +121,11 @@ export function isBridgeSettingDisabled(recordingMethod: string): boolean {
   return recordingMethod !== "bridge";
 }
 
+/** STT 並列度を有効範囲（1〜4）にクランプする */
+export function clampSttConcurrency(value: number): number {
+  return Math.max(1, Math.min(4, Math.floor(value)));
+}
+
 export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "qwen3-asr",
   sttApiKey: "",
@@ -126,6 +133,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttServerDir: "D:\\AI-Agent\\giji-obsidian\\qwen3-asr-server",
   sttModel: "qwen3-asr-0.6b",
   sttLang: "auto",
+  sttMaxConcurrency: 2,
   sttProviderProfiles: {},
   llmProvider: "claudian",
   llmBaseUrl: "https://api.deepseek.com/v1",

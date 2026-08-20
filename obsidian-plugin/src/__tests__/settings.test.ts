@@ -6,6 +6,7 @@ import {
   isBridgeSettingDisabled,
   isLocalSttProvider,
   SETTINGS_TABS,
+  clampSttConcurrency,
 } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
@@ -191,5 +192,16 @@ test("isLocalSttProvider categorizes providers", () => {
   assert.equal(isLocalSttProvider("whisper-small"), true);
   assert.equal(isLocalSttProvider("openai"), false);
   assert.equal(isLocalSttProvider("groq"), false);
+});
+
+test("sttMaxConcurrency defaults to 2 and validates range 1-4", () => {
+  assert.equal(DEFAULT_SETTINGS.sttMaxConcurrency, 2);
+});
+
+test("sttMaxConcurrency is clamped to valid range", () => {
+  const settings = { ...DEFAULT_SETTINGS, sttMaxConcurrency: 0 };
+  assert.equal(clampSttConcurrency(settings.sttMaxConcurrency), 1);
+  assert.equal(clampSttConcurrency(5), 4);
+  assert.equal(clampSttConcurrency(3), 3);
 });
 
