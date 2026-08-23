@@ -1,5 +1,6 @@
 import { GijiSettings, SttLang } from "../settings";
 import { isWav, readWavHeader, MAX_TRANSCRIPTION_BYTES } from "../audio/chunker";
+import { nodeFetch } from "./nodeFetch";
 
 export interface SttProvider {
   id: string;
@@ -260,6 +261,98 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
+/** MyWhisper エラー（HTTP status + body を保持して上層リトライ判断に使用） */
+export class MyWhisperError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly body?: string,
+  ) {
+    super(message);
+    this.name = "MyWhisperError";
+  }
+}
+
+/** MyWhisper 本地 STT Provider（POC_020 ASR サーバ専用） */
+export class MyWhisperStt implements SttProvider {
+  readonly id = "mywhisper";
+  readonly maxChunkSec?: number = undefined;
+  readonly maxBytesPerRequest?: number = 1_073_741_824; // 1 GB
+
+  constructor(
+    private readonly baseUrl: string,
+    private readonly token?: string,
+    private readonly fetchImpl: typeof fetch = nodeFetch,
+  ) {}
+
+  async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
+    const url = `${this.baseUrl.replace(/\/+$/, "")}/asr`;
+
+    const form = new FormData();
+    form.append("audio_file", new Blob([audio], { type: "audio/wav" }), "audio.wav");
+    if (lang !== "auto") {
+      form.append("language", lang);
+    }
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+
+    const response = await this.fetchImpl(url, {
+      method: "POST",
+      body: form,
+      headers,
+    });
+
+    // 防御式 段階 1: Content-Type
+    const ct = response.headers.get("content-type") ?? "";
+    if (!ct.startsWith("text/")) {
+      throw new MyWhisperError(
+        `MyWhisper 返回非文本响应 (${ct})`,
+        response.status,
+        (await response.text()).slice(0, 500),
+      );
+    }
+
+    const body = await response.text();
+
+    // HTTP エラー応答
+    if (!response.ok) {
+      throw new MyWhisperError(
+        `MyWhisper 错误 ${response.status}: ${body.slice(0, 200)}`,
+        response.status,
+        body,
+      );
+    }
+
+    // 防御式 段階 2: HTML エラーページ検出
+    const trimmedStart = body.trimStart();
+    if (trimmedStart.startsWith("<")) {
+      const looksLikeError =
+        /<\/?(html|title|h1)|HTTP\/.*\s(5\d\d|4\d\d)|Bad Gateway|Service Unavailable/i
+          .test(body.slice(0, 500));
+      if (looksLikeError) {
+        throw new MyWhisperError(
+          `MyWhisper 返回 HTML 错误页（可能服务未启动或反代拦截）`,
+          response.status,
+          body.slice(0, 500),
+        );
+      }
+    }
+
+    // 防御式 段階 3: 空テキスト検出
+    const result = body.trim();
+    if (!result) {
+      throw new MyWhisperError(
+        "MyWhisper 返回空文本（音频可能无语音或静音过长）",
+      );
+    }
+
+    return result;
+  }
+}
+
 export function createSttProvider(
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
@@ -275,6 +368,12 @@ export function createSttProvider(
       return new Qwen3AsrStt(settings.sttBaseUrl, settings.sttModel, fetchImpl);
     case "whisper-small":
       return new WhisperLocalStt(settings.sttBaseUrl, fetchImpl);
+    case "mywhisper":
+      return new MyWhisperStt(
+        settings.sttMyWhisperBaseUrl.replace(/\/+$/, ""),
+        settings.sttMyWhisperToken || undefined,
+        fetchImpl,
+      );
     default:
       // 黙ったフォールバックは誤設定を隠す（例: OpenAI キーを Groq へ送信して 401）
       throw new Error(`unsupported STT provider: ${settings.sttProvider}（未対応の STT プロバイダーです）`);

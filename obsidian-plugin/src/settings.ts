@@ -3,7 +3,7 @@ import { join } from "path";
 import { mkdirSync } from "fs";
 
 export type SttLang = "auto" | "zh" | "ja" | "en";
-export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr" | "whisper-small";
+export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr" | "whisper-small" | "mywhisper";
 
 /** STT カテゴリ（ローカル / クラウド）。sttProvider から導出する */
 export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["qwen3-asr", "whisper-small"];
@@ -15,6 +15,7 @@ export const STT_PROVIDER_LABELS: Record<SttProviderId, string> = {
   groq: "Groq",
   "qwen3-asr": "Qwen3-ASR（ローカル・既定）",
   "whisper-small": "Whisperローカル(small)",
+  "mywhisper": "MyWhisper（ローカル・POC_020）",
 };
 
 export function isLocalSttProvider(p: string): boolean {
@@ -59,6 +60,10 @@ export interface GijiSettings {
   sttMaxConcurrency: number;
   /** STT provider 別に保存した API キープロファイル */
   sttProviderProfiles?: Record<string, SttProviderProfile>;
+  /** MyWhisper ASR サーバ Base URL (POC_020 本地 ASR) */
+  sttMyWhisperBaseUrl: string;
+  /** MyWhisper 用 Bearer Token（:9000 は無認証のため通常空） */
+  sttMyWhisperToken: string;
   // ③ 要約
   llmProvider: LlmProviderId;
   llmBaseUrl: string;
@@ -135,6 +140,8 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttLang: "auto",
   sttMaxConcurrency: 2,
   sttProviderProfiles: {},
+  sttMyWhisperBaseUrl: "http://192.168.0.88:9000/",
+  sttMyWhisperToken: "",
   llmProvider: "claudian",
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmModel: "deepseek-v4-flash",

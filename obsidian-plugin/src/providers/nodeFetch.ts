@@ -111,3 +111,16 @@ export function createNodeFetch(
       nodeReq.end();
     });
 }
+
+/**
+ * 既定の fetch 実装:
+ * - Obsidian デスクトップ（nodeIntegration あり）: Node http/https 直接接続。
+ *   レンダラーの fetch は CORS を強制され CORS 非対応エンドポイントに到達できないため、
+ *   curl と同等の Node スタックを優先する。
+ * - モバイル / テスト環境: globalThis.fetch にフォールバック。
+ */
+export const nodeFetch: typeof fetch = (() => {
+  const fn = createNodeFetch();
+  if (fn) return fn as unknown as typeof fetch;
+  return fetch.bind(globalThis);
+})();
