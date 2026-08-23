@@ -1,6 +1,18 @@
 import type { GijiSettings, SttProviderId, SttProviderProfile } from "../settings";
 
 /**
+ * provider 切替時にプロファイルへ退避する settings キー集合。
+ * `mywhisper` ↔ 他 provider の往復でも Base URL と Token を保持するために使用。
+ */
+const STT_PROFILE_BACKUP_KEYS = new Set([
+  "sttApiKey",
+  "sttBaseUrl",
+  "sttModel",
+  "sttMyWhisperBaseUrl", // ← 追加: MyWhisper (POC_020) ASR サーバ Base URL
+  "sttMyWhisperToken",   // ← 追加: MyWhisper 用 Bearer Token（:9000 は無認証のため通常空）
+]);
+
+/**
  * 現在の STT API キーを provider 別プロファイルとして保存した新しい settings を返す。
  * 接続テスト成功時・provider 切替時に呼ばれ、provider 間でキーを共有しない。
  */
