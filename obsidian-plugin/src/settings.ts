@@ -24,9 +24,17 @@ export function isLocalSttProvider(p: string): boolean {
 import type { LlmPresetId as LlmProviderId } from "./providers/llmPresets";
 export type { LlmProviderId };
 export type LlmApiFormat = "openai" | "anthropic";
-/** STT provider 別に保存する設定（API キーを provider 間で共有しない） */
+/** STT provider 別に保存する設定（API キーのみ provider 間で共有しない） */
 export interface SttProviderProfile {
   sttApiKey?: string;
+  /** STT API の Base URL（openai / groq 互換 provider 用） */
+  sttBaseUrl?: string;
+  /** STT モデル名（openai / groq 互換 provider 用） */
+  sttModel?: string;
+  /** MyWhisper (POC_020) ASR サーバ Base URL */
+  sttMyWhisperBaseUrl?: string;
+  /** MyWhisper 用 Bearer Token（:9000 は無認証のため通常空） */
+  sttMyWhisperToken?: string;
 }
 /** provider 別に保存する LLM 設定（API キー・モデル名・URL などを共有しない） */
 export interface LlmProviderProfile {

@@ -8,20 +8,28 @@ const STT_PROFILE_BACKUP_KEYS = new Set([
   "sttApiKey",
   "sttBaseUrl",
   "sttModel",
-  "sttMyWhisperBaseUrl", // ← 追加: MyWhisper (POC_020) ASR サーバ Base URL
-  "sttMyWhisperToken",   // ← 追加: MyWhisper 用 Bearer Token（:9000 は無認証のため通常空）
+  "sttMyWhisperBaseUrl", // ← MyWhisper (POC_020) ASR サーバ Base URL
+  "sttMyWhisperToken",   // ← MyWhisper 用 Bearer Token（:9000 は無認証のため通常空）
 ]);
 
+function pickProfileFields(settings: GijiSettings): Partial<GijiSettings> {
+  const out: Partial<GijiSettings> = {};
+  for (const k of STT_PROFILE_BACKUP_KEYS) {
+    (out as any)[k] = (settings as any)[k];
+  }
+  return out;
+}
+
 /**
- * 現在の STT API キーを provider 別プロファイルとして保存した新しい settings を返す。
- * 接続テスト成功時・provider 切替時に呼ばれ、provider 間でキーを共有しない。
+ * 現在の STT API キー・URL・model を provider 別プロファイルとして保存した新しい settings を返す。
+ * 接続テスト成功時・provider 切替時に呼ばれ、provider 間でキー/URL を共有しない。
  */
 export function saveSttProviderProfile(settings: GijiSettings, providerId: string): GijiSettings {
   return {
     ...settings,
     sttProviderProfiles: {
       ...(settings.sttProviderProfiles ?? {}),
-      [providerId]: { sttApiKey: settings.sttApiKey },
+      [providerId]: pickProfileFields(settings) as SttProviderProfile,
     },
   };
 }
@@ -38,6 +46,11 @@ export function switchSttProvider(
 ): GijiSettings {
   let next = saveSttProviderProfile(settings, settings.sttProvider);
   next = { ...next, sttProvider: newProviderId };
-  const saved = next.sttProviderProfiles?.[newProviderId]?.sttApiKey;
-  return { ...next, sttApiKey: saved ?? "" };
+  const saved = next.sttProviderProfiles?.[newProviderId];
+  // 復元: 保存済みフィールドを反映、無ければクリア
+  const restore: Record<string, string> = {};
+  for (const k of STT_PROFILE_BACKUP_KEYS) {
+    restore[k] = (saved as any)?.[k] ?? "";
+  }
+  return { ...next, ...restore } as GijiSettings;
 }
