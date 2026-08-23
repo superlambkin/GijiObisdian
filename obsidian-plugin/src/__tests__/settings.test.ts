@@ -190,6 +190,7 @@ test("DEFAULT_SETTINGS defaults to local qwen3-asr", () => {
 test("isLocalSttProvider categorizes providers", () => {
   assert.equal(isLocalSttProvider("qwen3-asr"), true);
   assert.equal(isLocalSttProvider("whisper-small"), true);
+  assert.equal(isLocalSttProvider("mywhisper"), true);
   assert.equal(isLocalSttProvider("openai"), false);
   assert.equal(isLocalSttProvider("groq"), false);
 });

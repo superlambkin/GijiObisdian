@@ -6,7 +6,7 @@ export type SttLang = "auto" | "zh" | "ja" | "en";
 export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr" | "whisper-small" | "mywhisper";
 
 /** STT カテゴリ（ローカル / クラウド）。sttProvider から導出する */
-export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["qwen3-asr", "whisper-small"];
+export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["qwen3-asr", "whisper-small", "mywhisper"];
 export const CLOUD_STT_PROVIDERS: readonly SttProviderId[] = ["openai", "google", "groq"];
 
 export const STT_PROVIDER_LABELS: Record<SttProviderId, string> = {
@@ -581,6 +581,38 @@ export class GijiSettingsTab extends PluginSettingTab {
               s.sttModel = v;
               await this.save();
             })
+          );
+      }
+
+      if (s.sttProvider === "mywhisper") {
+        new Setting(content)
+          .setName("MyWhisper 配置（本地 ASR 服务）")
+          .setDesc("💡 默认指向主人 LAN 部署实例；可改为其他地址后保存。")
+          .addText((text) =>
+            text
+              .setPlaceholder("http://192.168.0.88:9000/")
+              .setValue(s.sttMyWhisperBaseUrl)
+              .onChange(async (value: string) => {
+                if (!/^https?:\/\//.test(value)) {
+                  new Notice("Base URL 必须以 http:// 或 https:// 开头");
+                  return;
+                }
+                s.sttMyWhisperBaseUrl = value;
+                await this.save();
+              })
+          );
+
+        new Setting(content)
+          .setName("Token（可选）")
+          .setDesc(":9000 默认无认证，留空即可；未来如启用认证可在此填写。")
+          .addText((text) =>
+            text
+              .setPlaceholder("留空表示无认证")
+              .setValue(s.sttMyWhisperToken)
+              .onChange(async (value: string) => {
+                s.sttMyWhisperToken = value;
+                await this.save();
+              })
           );
       }
     } else {
