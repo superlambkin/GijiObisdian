@@ -13,7 +13,7 @@ import { LLM_PRESETS } from "./providers/llmPresets";
 import { initLogRecorder, info as logInfo } from "./debug/logRecorder";
 import { setPluginContext } from "./audio/pluginContext";
 
-const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small"];
+const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small", "mywhisper"];
 export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 
 export default class GijiPlugin extends Plugin {
