@@ -1,6 +1,6 @@
 import { GijiSettings, isLocalSttProvider } from "../settings";
 import { createSttProvider } from "../providers/stt";
-import { ensureLocalAsrServer } from "../qwen3AsrLauncher";
+import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { decodeTestAudio } from "./audioSample";
 
 export interface SttTestResult {
@@ -19,7 +19,10 @@ export async function runSttTest(
   }
   try {
     const provider = createSttProvider(settings, fetchImpl);
-    await ensureLocalAsrServer(settings, { fetchImpl });
+    // ローカルプロバイダのみ Whisper サーバ自動起動を試みる（クラウドは対象外）
+    if (isLocalSttProvider(settings.sttProvider)) {
+      await ensureWhisperLocalServer(settings, { fetchImpl });
+    }
     const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
     if (!text.trim()) return { ok: false, error: "请求成功但未识别出文本" };
     return { ok: true, text };
