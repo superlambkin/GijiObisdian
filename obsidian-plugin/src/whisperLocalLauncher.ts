@@ -35,6 +35,7 @@ export async function ensureWhisperLocalServer(
       WHISPER_MODEL: `whisper-${settings.sttWhisperModel}`,
       WHISPER_HOST: "127.0.0.1",
       WHISPER_PORT: "9000",
+      WHISPER_DOWNLOAD_ROOT: settings.sttWhisperModelDir || undefined,
     };
 
     const child = spawn(scriptPath, [], {
