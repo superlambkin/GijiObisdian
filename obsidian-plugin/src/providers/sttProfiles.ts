@@ -7,7 +7,6 @@ import type { GijiSettings, SttProviderId, SttProviderProfile } from "../setting
 const STT_PROFILE_BACKUP_KEYS = new Set([
   "sttApiKey",
   "sttBaseUrl",
-  "sttModel",
   "sttMyWhisperBaseUrl", // ← MyWhisper (POC_020) ASR サーバ Base URL
   "sttMyWhisperToken",   // ← MyWhisper 用 Bearer Token（:9000 は無認証のため通常空）
 ]);

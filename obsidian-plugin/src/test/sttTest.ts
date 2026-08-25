@@ -13,7 +13,7 @@ export async function runSttTest(
   settings: GijiSettings,
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<SttTestResult> {
-  // ローカル STT（qwen3-asr / whisper-small）は API キー不要
+  // ローカル STT（whisper-local / mywhisper）は API キー不要
   if (!isLocalSttProvider(settings.sttProvider) && !settings.sttApiKey) {
     return { ok: false, error: "请先填写 STT API Key" };
   }

@@ -1,8 +1,8 @@
 import { Notice, Plugin } from "obsidian";
-import { GijiSettings, isLocalSttProvider } from "../settings";
+import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
 import { isBridgeUp, launchBridge } from "../bridgeLauncher";
-import { isLocalAsrUp } from "../qwen3AsrLauncher";
+import { isWhisperLocalUp } from "../whisperLocalLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { appendToClaudianInput } from "./claudianApi";
@@ -21,10 +21,10 @@ export function shouldShowBridgeButton(recordingMethod: string): boolean {
 /** 選択中 STT プロバイダの文字起こし用モデル名（録音ボタンのツールチップ表示用） */
 export function sttModelLabel(settings: GijiSettings): string {
   switch (settings.sttProvider) {
-    case "qwen3-asr":
-      return "Qwen3";
-    case "whisper-small":
-      return "WhisperS";
+    case "whisper-local":
+      return "Whisper";
+    case "mywhisper":
+      return "MyWhisper";
     case "openai":
       return "OpenAI";
     case "groq":
@@ -46,11 +46,11 @@ export async function refreshSttDownState(settings: GijiSettings): Promise<void>
   const model = `文字起こし: ${sttModelLabel(settings)}`;
   btn.setAttribute("aria-label", model);
   btn.setAttribute("title", model);
-  if (!isLocalSttProvider(settings.sttProvider)) {
+  if (settings.sttProvider !== "whisper-local") {
     btn.classList.remove("giji-stt-down");
     return;
   }
-  const up = await isLocalAsrUp(settings);
+  const up = await isWhisperLocalUp(settings);
   btn.classList.toggle("giji-stt-down", !up);
 }
 

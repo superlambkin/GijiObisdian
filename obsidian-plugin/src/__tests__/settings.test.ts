@@ -10,7 +10,7 @@ import {
 } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
-  assert.equal(DEFAULT_SETTINGS.sttProvider, "qwen3-asr");
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "whisper-local");
   assert.equal(DEFAULT_SETTINGS.sttLang, "auto");
   assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
   assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
@@ -25,10 +25,9 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.ok(DEFAULT_SETTINGS.transcriptFileNameTemplate.startsWith("録音_"));
 });
 
-test("DEFAULT_SETTINGS includes qwen3-asr fields", () => {
+test("DEFAULT_SETTINGS includes whisper-local fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
-  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\giji-obsidian\\qwen3-asr-server");
-  assert.equal(DEFAULT_SETTINGS.sttModel, "qwen3-asr-0.6b");
+  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\giji-obsidian\\whisper-local-server");
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
@@ -183,16 +182,16 @@ test("LLM 接続テスト失敗時は saveSettings が呼ばれない", async ()
   }
 });
 
-test("DEFAULT_SETTINGS defaults to local qwen3-asr", () => {
-  assert.equal(DEFAULT_SETTINGS.sttProvider, "qwen3-asr");
+test("DEFAULT_SETTINGS defaults to local whisper", () => {
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "whisper-local");
 });
 
 test("isLocalSttProvider categorizes providers", () => {
-  assert.equal(isLocalSttProvider("qwen3-asr"), true);
-  assert.equal(isLocalSttProvider("whisper-small"), true);
+  assert.equal(isLocalSttProvider("whisper-local"), true);
   assert.equal(isLocalSttProvider("mywhisper"), true);
   assert.equal(isLocalSttProvider("openai"), false);
   assert.equal(isLocalSttProvider("groq"), false);
+  assert.equal(isLocalSttProvider("qwen3-asr"), false);
 });
 
 test("sttMaxConcurrency defaults to 2 and validates range 1-4", () => {

@@ -1,6 +1,6 @@
 import { GijiSettings } from "../settings";
 import { createSttProvider } from "../providers/stt";
-import { ensureLocalAsrServer } from "../qwen3AsrLauncher";
+import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { createLlmProvider } from "../providers/llm";
 import { splitForTranscription } from "../audio/chunker";
 import { renderMinutes, MINUTES_SYSTEM_PROMPT } from "../notes/generator";
@@ -38,7 +38,9 @@ export async function transcribeAudio(
   fetchImpl: typeof fetch = fetch.bind(globalThis)
 ): Promise<string> {
   const stt = createSttProvider(settings, fetchImpl);
-  await ensureLocalAsrServer(settings, { fetchImpl });
+  if (settings.sttProvider === "whisper-local") {
+    await ensureWhisperLocalServer(settings, { fetchImpl });
+  }
   // プロバイダー制約に応じて分割（Whisper 25MB → 24MB / Google 55 秒・400KB）
   const chunks = splitForTranscription(wav, stt);
   const parts: string[] = [];

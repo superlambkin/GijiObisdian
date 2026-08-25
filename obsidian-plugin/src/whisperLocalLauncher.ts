@@ -60,6 +60,17 @@ export async function ensureWhisperLocalServer(
   );
 }
 
+/**
+ * ローカル Whisper サーバが起動中か（ヘルスチェックのみ・spawn しない）。
+ * 録音ボタンの状態表示（refreshSttDownState）用。
+ */
+export async function isWhisperLocalUp(
+  settings: GijiSettings,
+  fetchImpl: typeof fetch = fetch.bind(globalThis),
+): Promise<boolean> {
+  return healthCheck(settings.sttBaseUrl, fetchImpl);
+}
+
 async function healthCheck(baseUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
   try {
     const url = `${baseUrl.replace(/\/v1\/?$/, "")}/health`;

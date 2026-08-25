@@ -14,8 +14,8 @@ test("shouldShowBridgeButton is true only for bridge", () => {
 });
 
 test("sttModelLabel returns short model name per provider", () => {
-  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "qwen3-asr" }), "Qwen3");
-  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "whisper-small" }), "WhisperS");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "whisper-local" }), "Whisper");
+  assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "mywhisper" }), "MyWhisper");
   assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "openai" }), "OpenAI");
   assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "groq" }), "Groq");
   assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "google" }), "Google");

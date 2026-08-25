@@ -40,8 +40,6 @@ export interface SttProviderProfile {
   sttApiKey?: string;
   /** STT API の Base URL（openai / groq 互換 provider 用） */
   sttBaseUrl?: string;
-  /** STT モデル名（openai / groq 互換 provider 用） */
-  sttModel?: string;
   /** MyWhisper (POC_020) ASR サーバ Base URL */
   sttMyWhisperBaseUrl?: string;
   /** MyWhisper 用 Bearer Token（:9000 は無認証のため通常空） */
@@ -68,7 +66,7 @@ export interface GijiSettings {
   // ② 文字起こし
   sttProvider: SttProviderId;
   sttApiKey: string;
-  /** 🔜 qwen3-asr ローカルサーバ URL（既定 http://127.0.0.1:9000/v1） */
+  /** Whisper ローカルサーバ URL（OpenAI 互換・既定 http://127.0.0.1:9000/v1） */
   sttBaseUrl: string;
   /** Whisper（faster-whisper）モデル ID（既定 small） */
   sttWhisperModel: WhisperModelId;
@@ -76,8 +74,6 @@ export interface GijiSettings {
   sttWhisperModelDir: string;
   /** 🔜 ローカル ASR サーバのディレクトリ（自動起動用） */
   sttServerDir: string;
-  /** 🔜 qwen3-asr モデル名（既定 qwen3-asr-0.6b） */
-  sttModel: string;
   sttLang: SttLang;
   /** STT 送信の並列度（1〜4）。デフォルト 2 */
   sttMaxConcurrency: number;
@@ -161,7 +157,6 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttWhisperModel: "small",
   sttWhisperModelDir: "",
   sttServerDir: "D:\\AI-Agent\\giji-obsidian\\whisper-local-server",
-  sttModel: "qwen3-asr-0.6b",
   sttLang: "auto",
   sttMaxConcurrency: 2,
   sttProviderProfiles: {},
