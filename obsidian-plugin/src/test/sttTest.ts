@@ -1,7 +1,7 @@
 import { GijiSettings, isLocalSttProvider } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
-import { decodeTestAudio } from "./audioSample";
+import { decodeTestAudio, decodeTestAudioJa } from "./audioSample";
 
 export interface SttTestResult {
   ok: boolean;
@@ -23,7 +23,8 @@ export async function runSttTest(
     if (settings.sttProvider === "whisper-local") {
       await ensureWhisperLocalServer(settings, { fetchImpl });
     }
-    const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
+    const audio = settings.sttLang === "ja" ? decodeTestAudioJa() : decodeTestAudio();
+    const text = await provider.transcribe(audio, settings.sttLang);
     if (!text.trim()) return { ok: false, error: "请求成功但未识别出文本" };
     return { ok: true, text };
   } catch (e) {
