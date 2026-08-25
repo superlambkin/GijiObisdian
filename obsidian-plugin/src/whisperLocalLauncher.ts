@@ -42,7 +42,8 @@ export async function ensureWhisperLocalServer(
       env,
       stdio: "ignore",
       detached: true,
-      shell: false,
+      shell: true,
+      windowsHide: true,
     });
     child.unref();
   }
