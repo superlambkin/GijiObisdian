@@ -10,6 +10,16 @@ const base = {
   sttWhisperModel: "small" as const,
 };
 
+test("ensureWhisperLocalServer throws clear error when sttBaseUrl is empty", async () => {
+  await assert.rejects(
+    () => ensureWhisperLocalServer(
+      { ...base, sttBaseUrl: "" },
+      { skipSpawn: true, timeoutMs: 1000 },
+    ),
+    /ローカル Whisper サーバ URL が未設定/,
+  );
+});
+
 test("ensureWhisperLocalServer skips startup when health check succeeds", async () => {
   const fakeFetch = (async () =>
     new Response(JSON.stringify({ status: "ok", model: "small" }), { status: 200 })

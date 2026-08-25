@@ -9,9 +9,14 @@
  * - Node http/https は curl と同等の直接接続（CORS なし・プロキシ非経由）で、
  *   失敗時も ENOTFOUND / ECONNREFUSED 等の code 付きで診断できる
  *
- * 対応範囲: POST/GET + 文字列 body + SSE ストリーミング（body.getReader()）+
- * text()/json()（非 SSE 用）+ AbortSignal。リダイレクト・gzip は未対応
- * （Accept-Encoding を送らないのでサーバーは圧縮してこない）。
+ * 対応範囲: POST/GET + 文字列 / FormData（multipart）/ ArrayBuffer body +
+ * SSE ストリーミング（body.getReader()）+ text()/json()（非 SSE 用）+ AbortSignal。
+ * リダイレクト・gzip は未対応（Accept-Encoding を送らないのでサーバーは圧縮してこない）。
+ *
+ * FormData 対応（2026-08-26）:
+ * - STT（whisper-local / mywhisper / groq / openai）は multipart で音声を送る。
+ * - レンダラー fetch は CORS 非対応のローカル/リモート STT サーバに届かないため、
+ *   Node 直結の http/https で multipart を組み立てて送信する。
  */
 
 interface MinimalResponse {
@@ -47,32 +52,51 @@ export function createNodeFetch(
 
   return (url: any, init: any = {}): Promise<MinimalResponse> =>
     new Promise((resolve, reject) => {
-      let u: URL;
-      try {
-        u = new URL(String(url));
-      } catch (e) {
-        reject(e);
-        return;
-      }
-      const mod = u.protocol === "http:" ? http : https;
-      const headers: Record<string, string> = { ...(init.headers || {}) };
-      const bodyText = init.body != null ? String(init.body) : undefined;
-      if (
-        bodyText !== undefined &&
-        !Object.keys(headers).some((k) => k.toLowerCase() === "content-length")
-      ) {
-        headers["Content-Length"] = String(new TextEncoder().encode(bodyText).length);
-      }
-      const nodeReq = mod.request(
-        {
-          method: init.method || "GET",
-          hostname: u.hostname,
-          port: u.port || (u.protocol === "http:" ? 80 : 443),
-          path: u.pathname + u.search,
-          headers,
-          signal: init.signal, // Node 15.5+ : abort で request.destroy される
-        },
-        (res: any) => {
+      (async () => {
+        let u: URL;
+        try {
+          u = new URL(String(url));
+        } catch (e) {
+          reject(e);
+          return;
+        }
+        const mod = u.protocol === "http:" ? http : https;
+        const headers: Record<string, string> = { ...(init.headers || {}) };
+        let bodyBuffer: Buffer | undefined;
+        const body = init.body;
+        if (body != null) {
+          if (typeof body === "string") {
+            bodyBuffer = Buffer.from(body, "utf-8");
+          } else if (typeof FormData !== "undefined" && body instanceof FormData) {
+            // multipart を手組み（レンダラー fetch の FormData は CORS 非対応サーバに届かない）
+            const { buffer, contentType } = await formDataToMultipart(body);
+            bodyBuffer = buffer;
+            headers["Content-Type"] = contentType;
+          } else if (body instanceof ArrayBuffer) {
+            bodyBuffer = Buffer.from(new Uint8Array(body));
+          } else if (ArrayBuffer.isView(body)) {
+            bodyBuffer = Buffer.from(
+              new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
+            );
+          } else {
+            bodyBuffer = Buffer.from(String(body), "utf-8");
+          }
+          if (
+            !Object.keys(headers).some((k) => k.toLowerCase() === "content-length")
+          ) {
+            headers["Content-Length"] = String(bodyBuffer.length);
+          }
+        }
+        const nodeReq = mod.request(
+          {
+            method: init.method || "GET",
+            hostname: u.hostname,
+            port: u.port || (u.protocol === "http:" ? 80 : 443),
+            path: u.pathname + u.search,
+            headers,
+            signal: init.signal, // Node 15.5+ : abort で request.destroy される
+          },
+          (res: any) => {
           // body（SSE）と text()/json()（非 SSE）の両方が同一の web ストリームを
           // 共有するよう遅延生成にする（postOnce は両パスで res.body に触れるため）
           let webBody: ReadableStream<Uint8Array> | undefined;
@@ -106,10 +130,55 @@ export function createNodeFetch(
           });
         }
       );
-      nodeReq.on("error", reject);
-      if (bodyText !== undefined) nodeReq.write(bodyText);
-      nodeReq.end();
+        nodeReq.on("error", reject);
+        if (bodyBuffer) nodeReq.write(bodyBuffer);
+        nodeReq.end();
+      })();
     });
+}
+
+/**
+ * FormData を multipart/form-data の Buffer に変換する。
+ * - 文字列エントリ: プレーンな form-data パート
+ * - Blob/File エントリ: filename + Content-Type 付きパート
+ */
+async function formDataToMultipart(
+  form: FormData,
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const boundary = "----gijibridge" + Math.random().toString(16).slice(2);
+  const parts: Buffer[] = [];
+  for (const [key, value] of (form as any).entries()) {
+    if (typeof value === "string") {
+      parts.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`,
+          "utf-8",
+        ),
+      );
+    } else {
+      const blob = value as any;
+      const filename =
+        typeof blob?.name === "string" && blob.name ? blob.name : "file";
+      const contentType =
+        typeof blob?.type === "string" && blob.type
+          ? blob.type
+          : "application/octet-stream";
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      parts.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${key}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+          "utf-8",
+        ),
+      );
+      parts.push(Buffer.from(bytes));
+      parts.push(Buffer.from("\r\n", "utf-8"));
+    }
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`, "utf-8"));
+  return {
+    buffer: Buffer.concat(parts),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
 }
 
 /**

@@ -2,6 +2,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import type { WhisperModelId } from "./settings";
 import { WHISPER_MODELS } from "./settings";
+import { nodeFetch } from "./providers/nodeFetch";
 
 export type ModelDlStatus = "not-downloaded" | "downloading" | "downloaded" | "error";
 
@@ -39,11 +40,18 @@ export function checkModelExists(model: WhisperModelId, modelDir: string): boole
 export async function downloadWhisperModel(
   model: WhisperModelId,
   baseUrl: string,
+  fetchImpl: typeof fetch = nodeFetch,
 ): Promise<void> {
   setModelStatus(model, "downloading");
   try {
+    // 空 / 相対 URL だと相対 fetch になり Obsidian 側で黙って失敗するため、先に明確なエラーにする
+    if (!/^https?:\/\//.test(baseUrl)) {
+      throw new Error(
+        "STT Base URL が未設定です。設定タブの『ローカル Whisper サーバ URL』を確認してください",
+      );
+    }
     const apiBase = baseUrl.replace(/\/v1\/?$/, "") + "/v1";
-    const res = await fetch(`${apiBase}/download/${WHISPER_MODELS[model].repo}`, {
+    const res = await fetchImpl(`${apiBase}/download/${WHISPER_MODELS[model].repo}`, {
       method: "POST",
     });
     if (!res.ok) {

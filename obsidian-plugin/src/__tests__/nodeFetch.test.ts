@@ -96,6 +96,43 @@ test("nodeFetch: HTTP エラーは ok=false + status + body を返す", async ()
   );
 });
 
+test("nodeFetch: FormData を multipart に変換して送信できる", async () => {
+  const { createNodeFetch } = await import("../providers/nodeFetch");
+  const f = createNodeFetch(nodeRequire)!;
+  await withServer(
+    (req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = Buffer.concat(chunks);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ ct: req.headers["content-type"], bodyB64: body.toString("base64") }),
+        );
+      });
+    },
+    async (port) => {
+      const form = new FormData();
+      form.append("model", "whisper-small");
+      form.append(
+        "file",
+        new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+        "audio.wav",
+      );
+      const res = await f(`http://127.0.0.1:${port}/`, { method: "POST", body: form as any });
+      const data = JSON.parse(await res.text());
+      const raw = Buffer.from(data.bodyB64 as string, "base64");
+      const text = raw.toString("utf-8");
+      assert.match(data.ct as string, /^multipart\/form-data; boundary=/);
+      assert.ok(text.includes('name="model"'));
+      assert.ok(text.includes("whisper-small"));
+      assert.ok(text.includes('name="file"; filename="audio.wav"'));
+      assert.ok(text.includes("Content-Type: audio/wav"));
+      assert.ok(raw.includes(Buffer.from([1, 2, 3])));
+    },
+  );
+});
+
 test("nodeFetch: abort シグナルで AbortError 系の拒否", async () => {
   const { createNodeFetch } = await import("../providers/nodeFetch");
   const f = createNodeFetch(nodeRequire)!;

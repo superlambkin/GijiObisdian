@@ -31,7 +31,7 @@ export async function transcribeWithRetry(
   deps: TranscribeRetryDeps = {}
 ): Promise<TranscribeFileResult> {
   const transcribe = deps.transcribe ?? (async (buf: ArrayBuffer, s: GijiSettings) => {
-    const stt = createSttProvider(s, fetch.bind(globalThis));
+    const stt = createSttProvider(s);
     return stt.transcribe(buf, s.sttLang);
   });
   const concurrency = clampSttConcurrency(maxConcurrency);

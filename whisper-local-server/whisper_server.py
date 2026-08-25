@@ -14,6 +14,7 @@ import threading
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
 from huggingface_hub import snapshot_download
@@ -73,6 +74,15 @@ def _normalize_lang(language: Optional[str]) -> Optional[str]:
 
 
 app = FastAPI(title="GijiObsidian Whisper Server")
+
+# Obsidian レンダラーの fetch は CORS を強制されるため、ローカルサーバ側で許可する。
+# （STT の multipart FormData 送信はレンダラー fetch が必須）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")

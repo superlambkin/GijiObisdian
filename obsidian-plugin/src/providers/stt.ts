@@ -302,7 +302,7 @@ export class MyWhisperStt implements SttProvider {
 
 export function createSttProvider(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  fetchImpl: typeof fetch = nodeFetch
 ): SttProvider {
   switch (settings.sttProvider) {
     case "groq":

@@ -7,6 +7,7 @@ import {
   getModelStatus,
   setModelStatus,
   checkModelExists,
+  downloadWhisperModel,
 } from "../whisperModelManager";
 import { WHISPER_MODELS } from "../settings";
 
@@ -38,4 +39,39 @@ test("checkModelExists returns true when model cache present", () => {
   mkdirSync(cacheDir, { recursive: true });
   writeFileSync(join(cacheDir, "model.bin"), "fake");
   assert.equal(checkModelExists("medium", tmpDir), true);
+});
+
+test("downloadWhisperModel throws clear error when baseUrl is empty", async () => {
+  setModelStatus("tiny", "not-downloaded");
+  await assert.rejects(
+    () => downloadWhisperModel("tiny", ""),
+    /STT Base URL が未設定/,
+  );
+  assert.equal(getModelStatus("tiny"), "error");
+});
+
+test("downloadWhisperModel posts to /v1/download/{repo} and marks downloaded", async () => {
+  setModelStatus("tiny", "not-downloaded");
+  let capturedUrl = "";
+  const fakeFetch = (async (url: string) => {
+    capturedUrl = String(url);
+    return { ok: true, status: 200, json: async () => ({ status: "ok" }) };
+  }) as unknown as typeof fetch;
+  await downloadWhisperModel("tiny", "http://127.0.0.1:9000/v1", fakeFetch);
+  assert.equal(capturedUrl, "http://127.0.0.1:9000/v1/download/Systran/faster-whisper-tiny");
+  assert.equal(getModelStatus("tiny"), "downloaded");
+});
+
+test("downloadWhisperModel marks error status on HTTP failure", async () => {
+  setModelStatus("medium", "not-downloaded");
+  const fakeFetch = (async () => ({
+    ok: false,
+    status: 404,
+    json: async () => ({}),
+  })) as unknown as typeof fetch;
+  await assert.rejects(
+    () => downloadWhisperModel("medium", "http://127.0.0.1:9000/v1", fakeFetch),
+    /HTTP 404/,
+  );
+  assert.equal(getModelStatus("medium"), "error");
 });

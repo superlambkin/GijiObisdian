@@ -216,6 +216,8 @@ import {
 import { switchSttProvider, saveSttProviderProfile } from "./providers/sttProfiles";
 import { getModelStatus, checkModelExists, downloadWhisperModel, ModelDlStatus } from "./whisperModelManager";
 import { ensureWhisperLocalServer } from "./whisperLocalLauncher";
+import { writeDebugLog } from "./util/debugLog";
+import { nodeFetch } from "./providers/nodeFetch";
 
 /** 設定画面のタブ ID */
 export type SettingsTabId = "recording" | "transcript" | "summary" | "other";
@@ -272,15 +274,20 @@ export class GijiSettingsTab extends PluginSettingTab {
    * STT 接続テストを実行し、成功時はこの provider の API キーを
    * provider 別プロファイルに保存してから永続化する。
    */
-  async handleSttTest(): Promise<void> {
+  async handleSttTest(fetchImpl: typeof fetch = nodeFetch): Promise<void> {
     const s = this.plugin.settings as GijiSettings;
-    const res = await runSttTest(s);
+    const res = await runSttTest(s, fetchImpl);
     if (res.ok) {
       Object.assign(s, saveSttProviderProfile(s, s.sttProvider));
       await this.save();
       new Notice(`✅ 文字起こし成功: ${res.text}`);
     } else {
       new Notice(`❌ テスト失敗: ${res.error}`);
+      await writeDebugLog(
+        this.app,
+        this.plugin.manifest.dir,
+        `stage=stt-test status=fail provider=${s.sttProvider} baseUrl=${JSON.stringify(s.sttBaseUrl)} error="${res.error}"`,
+      );
     }
   }
 
@@ -632,6 +639,11 @@ export class GijiSettingsTab extends PluginSettingTab {
                   new Notice(`✅ ${info.displayName} の DL 完了`);
                 } catch (e) {
                   new Notice(`❌ DL 失敗: ${(e as Error).message}`);
+                  await writeDebugLog(
+                    this.app,
+                    this.plugin.manifest.dir,
+                    `stage=whisper-dl status=fail model=${modelId} baseUrl=${JSON.stringify(s.sttBaseUrl)} error="${(e as Error).message}"`,
+                  );
                 } finally {
                   btn.setDisabled(false).setButtonText("📥 ダウンロード");
                   await this.display();

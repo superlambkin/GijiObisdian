@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import { join } from "path";
 import { createWriteStream } from "fs";
 import type { GijiSettings } from "./settings";
+import { nodeFetch } from "./providers/nodeFetch";
 
 export interface EnsureOptions {
   fetchImpl?: typeof fetch;
@@ -36,9 +37,16 @@ export async function ensureWhisperLocalServer(
   settings: GijiSettings,
   opts: EnsureOptions = {},
 ): Promise<void> {
-  const fetchImpl = opts.fetchImpl ?? fetch.bind(globalThis);
+  const fetchImpl = opts.fetchImpl ?? nodeFetch;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const skipSpawn = opts.skipSpawn ?? false;
+
+  // 空 / 相対 URL だと相対 fetch になり黙って 30 秒待ってしまうため、先に明確なエラーにする
+  if (!/^https?:\/\//.test(settings.sttBaseUrl)) {
+    throw new Error(
+      "ローカル Whisper サーバ URL が未設定です。設定タブの『ローカル Whisper サーバ URL』を入力してください",
+    );
+  }
 
   // ① 既に起動中ならスキップ
   if (await healthCheck(settings.sttBaseUrl, fetchImpl)) return;
@@ -61,11 +69,18 @@ export async function ensureWhisperLocalServer(
       WHISPER_PORT: port,
       WHISPER_DOWNLOAD_ROOT: settings.sttWhisperModelDir || undefined,
     };
+    // createWriteStream は fd が非同期に開くため、開く前に spawn の stdio に渡すと
+    // "The argument 'stdio' is invalid" になる。open イベントを待ってから渡す。
     const logStream = createWriteStream(join(settings.sttServerDir, "whisper-local.log"), { flags: "a" });
+    let logReady = false;
+    await new Promise<void>((resolve) => {
+      logStream.once("open", () => { logReady = true; resolve(); });
+      logStream.once("error", () => resolve());
+    });
     const child = spawn(scriptPath, [], {
       cwd: settings.sttServerDir,
       env,
-      stdio: ["ignore", logStream, logStream],
+      stdio: ["ignore", logReady ? logStream : "ignore", logReady ? logStream : "ignore"],
       detached: true,
       shell: true,
       windowsHide: true,
@@ -94,7 +109,7 @@ export async function ensureWhisperLocalServer(
  */
 export async function isWhisperLocalUp(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis),
+  fetchImpl: typeof fetch = nodeFetch,
 ): Promise<boolean> {
   return healthCheck(settings.sttBaseUrl, fetchImpl);
 }

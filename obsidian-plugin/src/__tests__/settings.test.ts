@@ -92,31 +92,28 @@ test("GijiSettingsTab: setActiveTab でタブ切替できる", () => {
 
 // ユーザー要求: 「STT モデル接続テスト成功時、成功したモデルの API キーを自動保存」
 test("STT 接続テスト成功時に saveSettings が呼ばれ provider 別キーが保存される", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => ({
+  // nodeFetch はモジュール読込時に捕捉されるため globalThis.fetch 差し替えでは
+  // 効かない。handleSttTest の fetchImpl 注入経由でモックを渡す。
+  const fakeFetch = (async () => ({
     ok: true,
     json: async () => ({ text: "こんにちは" }),
   })) as any;
-  try {
-    let saved = 0;
-    const plugin = {
-      manifest: { version: "0.0.0" },
-      settings: {
-        ...DEFAULT_SETTINGS,
-        sttProvider: "openai" as const,
-        sttApiKey: "openai-key",
-      },
-      saveSettings: async () => {
-        saved++;
-      },
-    };
-    const tab = new GijiSettingsTab({} as any, plugin as any);
-    await tab.handleSttTest();
-    assert.equal(saved, 1);
-    assert.equal((plugin.settings.sttProviderProfiles as any)?.openai?.sttApiKey, "openai-key");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  let saved = 0;
+  const plugin = {
+    manifest: { version: "0.0.0" },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      sttProvider: "openai" as const,
+      sttApiKey: "openai-key",
+    },
+    saveSettings: async () => {
+      saved++;
+    },
+  };
+  const tab = new GijiSettingsTab({} as any, plugin as any);
+  await tab.handleSttTest(fakeFetch);
+  assert.equal(saved, 1);
+  assert.equal((plugin.settings.sttProviderProfiles as any)?.openai?.sttApiKey, "openai-key");
 });
 
 // ユーザー要求: 「テスト成功した場合、対応LLMのAPIキーを保存する」

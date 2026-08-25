@@ -2,6 +2,7 @@ import { GijiSettings, isLocalSttProvider } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { decodeTestAudio, decodeTestAudioJa } from "./audioSample";
+import { nodeFetch } from "../providers/nodeFetch";
 
 export interface SttTestResult {
   ok: boolean;
@@ -11,7 +12,7 @@ export interface SttTestResult {
 
 export async function runSttTest(
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  fetchImpl: typeof fetch = nodeFetch
 ): Promise<SttTestResult> {
   // ローカル STT（whisper-local / mywhisper）は API キー不要
   if (!isLocalSttProvider(settings.sttProvider) && !settings.sttApiKey) {

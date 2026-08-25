@@ -2,6 +2,7 @@ import { GijiSettings } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { createLlmProvider } from "../providers/llm";
+import { nodeFetch } from "../providers/nodeFetch";
 import { splitForTranscription } from "../audio/chunker";
 import { renderMinutes, MINUTES_SYSTEM_PROMPT } from "../notes/generator";
 import { buildTemplateSystemPrompt } from "../notes/minutesTemplate";
@@ -35,7 +36,7 @@ export function parseMinutesSections(output: string) {
 export async function transcribeAudio(
   wav: ArrayBuffer,
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis)
+  fetchImpl: typeof fetch = nodeFetch
 ): Promise<string> {
   const stt = createSttProvider(settings, fetchImpl);
   if (settings.sttProvider === "whisper-local") {
@@ -57,7 +58,7 @@ export async function transcribeAudio(
 export async function transcribeAudioToMinutes(
   wav: ArrayBuffer,
   settings: GijiSettings,
-  fetchImpl: typeof fetch = fetch.bind(globalThis),
+  fetchImpl: typeof fetch = nodeFetch,
   templateMd?: string
 ): Promise<string> {
   const transcript = await transcribeAudio(wav, settings, fetchImpl);

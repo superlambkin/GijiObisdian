@@ -4,6 +4,7 @@ import { createSttProvider } from "../providers/stt";
 import { createLlmProvider, resolveLlmTimeoutMs } from "../providers/llm";
 import { getPreset } from "../providers/llmPresets";
 import { DEFAULT_SETTINGS } from "../settings";
+import { nodeFetch } from "../providers/nodeFetch";
 
 const groqSettings = { ...DEFAULT_SETTINGS, sttProvider: "groq" as const, sttApiKey: "key" };
 
@@ -173,12 +174,10 @@ function withBindingSensitiveFetch(run: () => Promise<void>) {
   });
 }
 
-test("default stt fetchImpl works with binding-sensitive fetch (chromium)", async () => {
-  await withBindingSensitiveFetch(async () => {
-    const stt = createSttProvider(groqSettings); // fetchImpl 省略 → デフォルト経路
-    const text = await stt.transcribe(new ArrayBuffer(4), "ja");
-    assert.equal(text, "ok");
-  });
+test("default stt fetchImpl uses nodeFetch (CORS 回避 + FormData 対応)", () => {
+  const stt = createSttProvider(groqSettings); // fetchImpl 省略 → nodeFetch デフォルト
+  // nodeFetch は Node http/https 直結 + multipart 組立に対応（CORS 非依存）
+  assert.equal((stt as any).fetchImpl, nodeFetch);
 });
 
 test("default llm fetchImpl works with binding-sensitive fetch (chromium)", async () => {

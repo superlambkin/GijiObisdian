@@ -1,6 +1,7 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
 import { transcribeAudio, transcribeAudioToMinutes } from "../commands/importAudio";
+import { nodeFetch } from "../providers/nodeFetch";
 import { buildClaudianMinutesPrompt, loadMinutesTemplate } from "../notes/minutesTemplate";
 import { appendToClaudianInput } from "./claudianApi";
 
@@ -37,7 +38,7 @@ export async function importAudioFlow(app: App, settings: GijiSettings, manifest
 
       // クラウド / Ollama: テンプレートを適用して LLM で議事録 MD を生成
       const template = await loadMinutesTemplate(app, settings, manifestDir);
-      const md = await transcribeAudioToMinutes(buf, settings, fetch.bind(globalThis), template);
+      const md = await transcribeAudioToMinutes(buf, settings, nodeFetch, template);
       const name = `議事録_${new Date().toISOString().slice(0, 10)}.md`;
       await app.vault.create(`${settings.outputDir}/${name}`, md);
       new Notice("✅ 議事録を生成しました");
