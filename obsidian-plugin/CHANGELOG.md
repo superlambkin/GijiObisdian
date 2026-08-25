@@ -2,6 +2,19 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## [0.8.0] - 2026-08-25
+
+### 🎙️ STT プロバイダ再設計
+
+- 🗑️ **Qwen3-ASR を完全削除**（コード・設計書・テストすべて）
+- 🆕 **Whisper ローカル拡張**：tiny / small / medium のモデル選択対応
+- 🆕 **モデル DL 機能**：HuggingFace から自動 DL + 状態可視化
+- 🆕 **モデル保存先指定**：既定 `<vault>/.obsidian/plugins/giji-obsidian/Model/`
+- 🆕 **「📂 フォルダを開く」ボタン**：Explorer でモデル保存先を表示
+- 🆕 **接続テスト日本語サンプル追加**
+- ✅ **MyWhisper（POC_020）既存維持**
+- ✅ **クラウド STT（openai / google / groq）既存維持**
+
 ## [0.7.0] - 2026-08-24
 
 ### ✨ 新增功能
