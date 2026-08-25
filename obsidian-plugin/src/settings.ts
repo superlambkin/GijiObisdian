@@ -3,19 +3,30 @@ import { join } from "path";
 import { mkdirSync } from "fs";
 
 export type SttLang = "auto" | "zh" | "ja" | "en";
-export type SttProviderId = "openai" | "google" | "groq" | "qwen3-asr" | "whisper-small" | "mywhisper";
+export type SttProviderId = "openai" | "google" | "groq" | "whisper-local" | "mywhisper";
 
 /** STT カテゴリ（ローカル / クラウド）。sttProvider から導出する */
-export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["qwen3-asr", "whisper-small", "mywhisper"];
+export const LOCAL_STT_PROVIDERS: readonly SttProviderId[] = ["whisper-local", "mywhisper"];
 export const CLOUD_STT_PROVIDERS: readonly SttProviderId[] = ["openai", "google", "groq"];
 
 export const STT_PROVIDER_LABELS: Record<SttProviderId, string> = {
   openai: "OpenAI",
   google: "Google",
   groq: "Groq",
-  "qwen3-asr": "Qwen3-ASR（ローカル・既定）",
-  "whisper-small": "Whisperローカル(small)",
+  "whisper-local": "Whisper（ローカル・faster-whisper）",
   "mywhisper": "MyWhisper（ローカル・POC_020）",
+};
+
+export type WhisperModelId = "tiny" | "small" | "medium";
+
+export const WHISPER_MODELS: Record<WhisperModelId, {
+  repo: string;
+  sizeBytes: number;
+  displayName: string;
+}> = {
+  tiny:   { repo: "Systran/faster-whisper-tiny",   sizeBytes: 75_000_000,   displayName: "Tiny（最速・75MB）" },
+  small:  { repo: "Systran/faster-whisper-small",  sizeBytes: 488_000_000,  displayName: "Small（バランス・488MB）" },
+  medium: { repo: "Systran/faster-whisper-medium", sizeBytes: 1_500_000_000, displayName: "Medium（高精度・1.5GB）" },
 };
 
 export function isLocalSttProvider(p: string): boolean {
@@ -59,6 +70,10 @@ export interface GijiSettings {
   sttApiKey: string;
   /** 🔜 qwen3-asr ローカルサーバ URL（既定 http://127.0.0.1:9000/v1） */
   sttBaseUrl: string;
+  /** Whisper（faster-whisper）モデル ID（既定 small） */
+  sttWhisperModel: WhisperModelId;
+  /** Whisper モデルの保存ディレクトリ（空文字ならロード時に Vault パスから動的決定） */
+  sttWhisperModelDir: string;
   /** 🔜 ローカル ASR サーバのディレクトリ（自動起動用） */
   sttServerDir: string;
   /** 🔜 qwen3-asr モデル名（既定 qwen3-asr-0.6b） */
@@ -140,10 +155,12 @@ export function clampSttConcurrency(value: number): number {
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
-  sttProvider: "qwen3-asr",
+  sttProvider: "whisper-local",
   sttApiKey: "",
   sttBaseUrl: "http://127.0.0.1:9000/v1",
-  sttServerDir: "D:\\AI-Agent\\giji-obsidian\\qwen3-asr-server",
+  sttWhisperModel: "small",
+  sttWhisperModelDir: "",
+  sttServerDir: "D:\\AI-Agent\\giji-obsidian\\whisper-local-server",
   sttModel: "qwen3-asr-0.6b",
   sttLang: "auto",
   sttMaxConcurrency: 2,
