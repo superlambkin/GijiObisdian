@@ -32,38 +32,24 @@ export function checkModelExists(model: WhisperModelId, modelDir: string): boole
 }
 
 /**
- * Whisper モデルを DL する（Python サーバの `/download/{repo}` エンドポイントを叩く）。
- * - onProgress は 0-100 の整数パーセントで進捗を報告する（content-length が取得できる場合のみ）
- * - DL 中は status を "downloading"、完了で "downloaded"、失敗で "error" に更新する
+ * Whisper モデルを DL する（Python サーバの `/v1/download/{repo}` エンドポイントを叩く）。
+ * サーバ側で DL が完了してから JSON を返すため、進捗 % は出せない（不確定表示）。
+ * DL 中は status を "downloading"、完了で "downloaded"、失敗で "error" に更新する。
  */
 export async function downloadWhisperModel(
   model: WhisperModelId,
   baseUrl: string,
-  onProgress?: (percent: number) => void,
 ): Promise<void> {
   setModelStatus(model, "downloading");
   try {
-    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/download/${WHISPER_MODELS[model].repo}`, {
+    const apiBase = baseUrl.replace(/\/v1\/?$/, "") + "/v1";
+    const res = await fetch(`${apiBase}/download/${WHISPER_MODELS[model].repo}`, {
       method: "POST",
     });
     if (!res.ok) {
       throw new Error(`モデル DL に失敗しました（HTTP ${res.status}）`);
     }
-    const contentLength = Number(res.headers.get("content-length") ?? 0);
-    if (!res.body) {
-      setModelStatus(model, "downloaded");
-      return;
-    }
-    const reader = res.body.getReader();
-    let received = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.length;
-      if (onProgress && contentLength > 0) {
-        onProgress(Math.min(100, Math.round((received / contentLength) * 100)));
-      }
-    }
+    await res.json();
     setModelStatus(model, "downloaded");
   } catch (e) {
     setModelStatus(model, "error");

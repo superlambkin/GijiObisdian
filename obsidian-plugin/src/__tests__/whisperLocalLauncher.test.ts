@@ -27,3 +27,23 @@ test("ensureWhisperLocalServer throws when health check fails repeatedly", async
     /Whisper サーバの起動がタイムアウト/,
   );
 });
+
+test("ensureWhisperLocalServer throws for non-loopback URL without spawning", async () => {
+  const fakeFetch = (async () => new Response("not ready", { status: 503 })) as typeof fetch;
+  await assert.rejects(
+    () => ensureWhisperLocalServer(
+      { ...base, sttBaseUrl: "http://192.168.0.88:9000/v1" },
+      { fetchImpl: fakeFetch, skipSpawn: true, timeoutMs: 1000 },
+    ),
+    /接続できません/,
+  );
+});
+
+test("ensureWhisperLocalServer treats 404 health as reachable", async () => {
+  const fakeFetch = (async () => new Response("not found", { status: 404 })) as typeof fetch;
+  // 404 は /health ルート無しの OpenAI 互換サーバ → 到達可能として即 return（spawn しない）
+  await ensureWhisperLocalServer(
+    { ...base, sttBaseUrl: "http://127.0.0.1:9999/v1" },
+    { fetchImpl: fakeFetch, skipSpawn: true, timeoutMs: 1000 },
+  );
+});

@@ -70,9 +70,11 @@ class WhisperLocalStt implements SttProvider {
     const l = this.langName(lang);
     if (l) form.append("language", l);
 
+    // /v1 を正規化（末尾 /v1 があっても無くても同じ API パスへ）
+    const apiBase = this.baseUrl.replace(/\/v1\/?$/, "") + "/v1";
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
+      res = await this.fetchImpl(`${apiBase}/audio/transcriptions`, {
         method: "POST",
         body: form as any,
       });

@@ -624,12 +624,11 @@ export class GijiSettingsTab extends PluginSettingTab {
             setting.addButton((btn) =>
               btn.setButtonText("📥 ダウンロード").onClick(async () => {
                 btn.setDisabled(true).setButtonText("DL中…");
+                setting.setDesc(`状態: ⏳ DL中…（${info.displayName}・サイズにより数分かかります）`);
                 try {
                   // サーバ未起動なら自動起動してから DL
                   await ensureWhisperLocalServer(s);
-                  await downloadWhisperModel(modelId, s.sttBaseUrl, (p) => {
-                    setting.setDesc(`状態: ⏳ DL中… ${p}%`);
-                  });
+                  await downloadWhisperModel(modelId, s.sttBaseUrl);
                   new Notice(`✅ ${info.displayName} の DL 完了`);
                 } catch (e) {
                   new Notice(`❌ DL 失敗: ${(e as Error).message}`);

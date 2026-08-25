@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { join } from "path";
+import { createWriteStream } from "fs";
 import type { GijiSettings } from "./settings";
 
 export interface EnsureOptions {
@@ -10,6 +11,21 @@ export interface EnsureOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const HEALTH_CHECK_INTERVAL_MS = 500;
+
+/** sttBaseUrl から host / port を抽出（パース不能時は既定 127.0.0.1:9000） */
+function parseBaseUrl(baseUrl: string): { host: string; port: string } {
+  try {
+    const u = new URL(baseUrl);
+    return { host: u.hostname, port: u.port || (u.protocol === "https:" ? "443" : "80") };
+  } catch {
+    return { host: "127.0.0.1", port: "9000" };
+  }
+}
+
+/** ループバックアドレス判定（自動 spawn してよいのはローカルのみ） */
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
 
 /**
  * ローカル Whisper サーバの起動を保証する。
@@ -27,24 +43,36 @@ export async function ensureWhisperLocalServer(
   // ① 既に起動中ならスキップ
   if (await healthCheck(settings.sttBaseUrl, fetchImpl)) return;
 
+  const { host, port } = parseBaseUrl(settings.sttBaseUrl);
+  // リモート URL は自動起動しない（対象サーバが起動済みであること）
+  if (!isLoopback(host)) {
+    throw new Error(
+      `ローカル Whisper サーバに接続できません（${settings.sttBaseUrl}）。リモート URL の場合は対象サーバが起動済みか確認してください`,
+    );
+  }
+
   // ② サーバを spawn して起動（skipSpawn=true はテスト用に spawn を回避）
   if (!skipSpawn) {
     const scriptPath = join(settings.sttServerDir, "start_whisper_local.bat");
     const env = {
       ...process.env,
       WHISPER_MODEL: `whisper-${settings.sttWhisperModel}`,
-      WHISPER_HOST: "127.0.0.1",
-      WHISPER_PORT: "9000",
+      WHISPER_HOST: host,
+      WHISPER_PORT: port,
       WHISPER_DOWNLOAD_ROOT: settings.sttWhisperModelDir || undefined,
     };
-
+    const logStream = createWriteStream(join(settings.sttServerDir, "whisper-local.log"), { flags: "a" });
     const child = spawn(scriptPath, [], {
       cwd: settings.sttServerDir,
       env,
-      stdio: "ignore",
+      stdio: ["ignore", logStream, logStream],
       detached: true,
       shell: true,
       windowsHide: true,
+    });
+    child.on("error", (err) => {
+      // spawn 失敗（bat 不在等）で未処理 error イベントによるクラッシュを防ぐ
+      console.error(`[giji] whisper local spawn error: ${err.message}`);
     });
     child.unref();
   }
@@ -75,7 +103,10 @@ async function healthCheck(baseUrl: string, fetchImpl: typeof fetch): Promise<bo
   try {
     const url = `${baseUrl.replace(/\/v1\/?$/, "")}/health`;
     const res = await fetchImpl(url, { method: "GET" });
-    return res.ok;
+    if (res.ok) return true;
+    // 404/405 = HTTP サーバは応答しているが /health ルートが無い（OpenAI 互換リモート等）→ 到達可能とみなす
+    if (res.status === 404 || res.status === 405) return true;
+    return false;
   } catch {
     return false;
   }

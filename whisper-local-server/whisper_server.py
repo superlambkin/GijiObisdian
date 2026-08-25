@@ -10,6 +10,7 @@
 import os
 import logging
 import tempfile
+import threading
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException
@@ -37,21 +38,28 @@ HF_REPO = HF_REPO_MAP.get(MODEL_ID, MODEL_ID)
 
 # モデル（遅延ロード。起動時にはロードしない → 未 DL でもサーバは起動できる）
 model: Optional[WhisperModel] = None
+_loaded_repo: Optional[str] = None
+_model_lock = threading.Lock()
 
 
-def get_model() -> WhisperModel:
-    """モデルを遅延ロード（未ロード時のみ）。未 DL なら HF から自動取得も試みる。"""
-    global model
-    if model is None:
-        logger.info(f"Loading model: {HF_REPO} (compute_type={COMPUTE_TYPE}, download_root={DOWNLOAD_ROOT})")
-        model = WhisperModel(
-            HF_REPO,
+def get_model(repo: Optional[str] = None) -> WhisperModel:
+    """モデルを遅延ロード。repo（Systran/...）指定時はそのリポジトリへ切替ロード。"""
+    global model, _loaded_repo
+    target = repo or HF_REPO
+    with _model_lock:
+        if model is not None and _loaded_repo == target:
+            return model
+        logger.info(f"Loading model: {target} (compute_type={COMPUTE_TYPE}, download_root={DOWNLOAD_ROOT})")
+        loaded = WhisperModel(
+            target,
             device="cpu",
             compute_type=COMPUTE_TYPE,
             download_root=DOWNLOAD_ROOT,
         )
-        logger.info("Model loaded successfully")
-    return model
+        model = loaded
+        _loaded_repo = target
+        logger.info(f"Model loaded: {target}")
+        return model
 
 
 # TS 側は言語名（Chinese/Japanese/English）を送る → コードへ正規化
@@ -72,7 +80,7 @@ async def health():
     """ヘルスチェック（サーバ起動確認用。モデル未ロードでも 200 を返す）"""
     return JSONResponse({
         "status": "ok",
-        "model": MODEL_ID,
+        "model": _loaded_repo or MODEL_ID,  # 実際にロード中のモデル
         "ready": model is not None,
     })
 
@@ -80,12 +88,13 @@ async def health():
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: bytes = File(...),
-    model: str = Form(default=MODEL_ID),  # OpenAI 互換のため受ける（実際はサーバ側モデルを使用）
+    model: str = Form(default=MODEL_ID),
     language: Optional[str] = Form(default=None),
 ):
-    """OpenAI 互換転写エンドポイント（レスポンスは JSON {"text": "..."}）"""
+    """OpenAI 互換転写エンドポイント。model フォーム（whisper-tiny/small/medium）で切替可能。"""
+    repo = HF_REPO_MAP.get(model, model) if model else HF_REPO
     try:
-        m = get_model()
+        m = get_model(repo)
     except Exception as e:
         logger.error(f"Model load failed: {e}")
         raise HTTPException(status_code=500, detail=f"モデルをロードできませんでした: {e}")

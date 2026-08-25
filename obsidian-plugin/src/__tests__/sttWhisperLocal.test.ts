@@ -89,3 +89,15 @@ test("whisper-local posts model=whisper-medium when medium is selected", async (
   await p.transcribe(new ArrayBuffer(10), "ja");
   assert.equal(capturedModel, "whisper-medium");
 });
+
+test("whisper-local works with baseUrl without /v1", async () => {
+  let capturedUrl = "";
+  const fakeFetch = (async (url: string, init: any) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({ text: "x" }), { status: 200 });
+  }) as typeof fetch;
+  const p = createSttProvider({ ...base, sttBaseUrl: "http://127.0.0.1:9000" }, fakeFetch);
+  const text = await p.transcribe(new ArrayBuffer(10), "ja");
+  assert.equal(capturedUrl, "http://127.0.0.1:9000/v1/audio/transcriptions");
+  assert.equal(text, "x");
+});
