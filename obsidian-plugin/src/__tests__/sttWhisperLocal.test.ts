@@ -5,8 +5,9 @@ import { DEFAULT_SETTINGS } from "../settings";
 
 const base = {
   ...DEFAULT_SETTINGS,
-  sttProvider: "whisper-small" as const,
+  sttProvider: "whisper-local" as const,
   sttBaseUrl: "http://127.0.0.1:9000/v1",
+  sttWhisperModel: "small" as const,
   sttApiKey: "",
 };
 
@@ -14,12 +15,12 @@ function jsonFetch(body: unknown, status = 200): typeof fetch {
   return (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
 }
 
-test("createSttProvider returns whisper-small provider", () => {
+test("createSttProvider returns whisper-local provider", () => {
   const p = createSttProvider(base, jsonFetch({ text: "ok" }));
-  assert.equal(p.id, "whisper-small");
+  assert.equal(p.id, "whisper-local");
 });
 
-test("whisper-small posts model=whisper-small to sttBaseUrl and returns text", async () => {
+test("whisper-local posts model=whisper-small to sttBaseUrl and returns text", async () => {
   let capturedUrl = "";
   let capturedModel = "";
   const fakeFetch = (async (url: string, init: any) => {
@@ -34,7 +35,7 @@ test("whisper-small posts model=whisper-small to sttBaseUrl and returns text", a
   assert.equal(text, "こんにちは");
 });
 
-test("whisper-small maps ja->Japanese and auto->no language", async () => {
+test("whisper-local maps ja->Japanese and auto->no language", async () => {
   const langs: Array<string | null> = [];
   const fakeFetch = (async (_url: string, init: any) => {
     langs.push((init.body as FormData).get("language") as string | null);
@@ -46,7 +47,7 @@ test("whisper-small maps ja->Japanese and auto->no language", async () => {
   assert.deepEqual(langs, ["Japanese", null]);
 });
 
-test("whisper-small surfaces HTTP error", async () => {
+test("whisper-local surfaces HTTP error", async () => {
   const p = createSttProvider(
     base,
     (async () => new Response("boom", { status: 500 })) as typeof fetch
@@ -54,7 +55,7 @@ test("whisper-small surfaces HTTP error", async () => {
   await assert.rejects(() => p.transcribe(new ArrayBuffer(10), "auto"), /STT 500/);
 });
 
-test("whisper-small surfaces friendly error on network rejection", async () => {
+test("whisper-local surfaces friendly error on network rejection", async () => {
   const p = createSttProvider(
     base,
     (async () => {
@@ -63,6 +64,28 @@ test("whisper-small surfaces friendly error on network rejection", async () => {
   );
   await assert.rejects(
     () => p.transcribe(new ArrayBuffer(10), "auto"),
-    /start_qwen3_asr\.bat/
+    /start_whisper_local\.bat/
   );
+});
+
+test("whisper-local posts model=whisper-tiny when tiny is selected", async () => {
+  let capturedModel = "";
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedModel = (init.body as FormData).get("model") as string;
+    return new Response(JSON.stringify({ text: "x" }), { status: 200 });
+  }) as typeof fetch;
+  const p = createSttProvider({ ...base, sttWhisperModel: "tiny" }, fakeFetch);
+  await p.transcribe(new ArrayBuffer(10), "ja");
+  assert.equal(capturedModel, "whisper-tiny");
+});
+
+test("whisper-local posts model=whisper-medium when medium is selected", async () => {
+  let capturedModel = "";
+  const fakeFetch = (async (_url: string, init: any) => {
+    capturedModel = (init.body as FormData).get("model") as string;
+    return new Response(JSON.stringify({ text: "x" }), { status: 200 });
+  }) as typeof fetch;
+  const p = createSttProvider({ ...base, sttWhisperModel: "medium" }, fakeFetch);
+  await p.transcribe(new ArrayBuffer(10), "ja");
+  assert.equal(capturedModel, "whisper-medium");
 });

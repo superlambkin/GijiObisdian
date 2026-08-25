@@ -1,4 +1,4 @@
-import { GijiSettings, SttLang } from "../settings";
+import { GijiSettings, SttLang, WhisperModelId } from "../settings";
 import { isWav, readWavHeader, MAX_TRANSCRIPTION_BYTES } from "../audio/chunker";
 import { nodeFetch } from "./nodeFetch";
 
@@ -40,83 +40,28 @@ class GroqStt implements SttProvider {
   }
 }
 
-/** Qwen3-ASR ローカルサーバ（OpenAI 互換 /v1/audio/transcriptions）。API キー不要。 */
-class Qwen3AsrStt implements SttProvider {
-  id = "qwen3-asr";
-  constructor(
-    private baseUrl: string,
-    private model: string,
-    private fetchImpl: typeof fetch
-  ) {}
-
-  /** auto → 省略 / zh → Chinese / ja → Japanese / en → English */
-  private langName(lang: SttLang): string | undefined {
-    switch (lang) {
-      case "zh":
-        return "Chinese";
-      case "ja":
-        return "Japanese";
-      case "en":
-        return "English";
-      default:
-        return undefined; // 自動検出
-    }
-  }
-
-  async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
-    const wav = isWav(audio);
-    const form = new FormData();
-    form.append("model", this.model);
-    form.append(
-      "file",
-      new Blob([audio], { type: wav ? "audio/wav" : "audio/mpeg" }),
-      wav ? "audio.wav" : "audio.mp3"
-    );
-    const l = this.langName(lang);
-    if (l) form.append("language", l);
-
-    let res: Response;
-    try {
-      res = await this.fetchImpl(`${this.baseUrl}/audio/transcriptions`, {
-        method: "POST",
-        body: form as any,
-      });
-    } catch {
-      throw new Error(
-        `ローカル ASR サーバに接続できません（${this.baseUrl}）。start_qwen3_asr.bat で起動してください`
-      );
-    }
-    if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    return data.text ?? "";
-  }
-}
-
-/** Whisper ローカル（openai-whisper small）。ローカルサーバへ model="whisper-small" を送る。API キー不要。 */
+/** Whisper ローカル（faster-whisper）。`whisper-{tiny,small,medium}` を選択可能。 */
 class WhisperLocalStt implements SttProvider {
-  id = "whisper-small";
+  id = "whisper-local";
   constructor(
     private baseUrl: string,
+    private model: WhisperModelId,
     private fetchImpl: typeof fetch
   ) {}
 
   private langName(lang: SttLang): string | undefined {
     switch (lang) {
-      case "zh":
-        return "Chinese";
-      case "ja":
-        return "Japanese";
-      case "en":
-        return "English";
-      default:
-        return undefined; // 自動検出
+      case "zh": return "Chinese";
+      case "ja": return "Japanese";
+      case "en": return "English";
+      default: return undefined;
     }
   }
 
   async transcribe(audio: ArrayBuffer, lang: SttLang): Promise<string> {
     const wav = isWav(audio);
     const form = new FormData();
-    form.append("model", "whisper-small");
+    form.append("model", `whisper-${this.model}`);
     form.append(
       "file",
       new Blob([audio], { type: wav ? "audio/wav" : "audio/mpeg" }),
@@ -133,7 +78,7 @@ class WhisperLocalStt implements SttProvider {
       });
     } catch {
       throw new Error(
-        `ローカル ASR サーバに接続できません（${this.baseUrl}）。start_qwen3_asr.bat で起動してください`
+        `ローカル Whisper サーバに接続できません（${this.baseUrl}）。start_whisper_local.bat で起動してください`
       );
     }
     if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`);
@@ -364,10 +309,8 @@ export function createSttProvider(
       return new OpenaiStt(settings.sttApiKey, fetchImpl);
     case "google":
       return new GoogleStt(settings.sttApiKey, fetchImpl);
-    case "qwen3-asr":
-      return new Qwen3AsrStt(settings.sttBaseUrl, settings.sttModel, fetchImpl);
-    case "whisper-small":
-      return new WhisperLocalStt(settings.sttBaseUrl, fetchImpl);
+    case "whisper-local":
+      return new WhisperLocalStt(settings.sttBaseUrl, settings.sttWhisperModel, fetchImpl);
     case "mywhisper":
       return new MyWhisperStt(
         settings.sttMyWhisperBaseUrl.replace(/\/+$/, ""),
