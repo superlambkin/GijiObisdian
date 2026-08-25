@@ -219,6 +219,8 @@ import {
   saveProviderProfile,
 } from "./providers/llmPresets";
 import { switchSttProvider, saveSttProviderProfile } from "./providers/sttProfiles";
+import { getModelStatus, checkModelExists, downloadWhisperModel, ModelDlStatus } from "./whisperModelManager";
+import { ensureWhisperLocalServer } from "./whisperLocalLauncher";
 
 /** 設定画面のタブ ID */
 export type SettingsTabId = "recording" | "transcript" | "summary" | "other";
@@ -230,6 +232,16 @@ export const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string }> = [
   { id: "summary", label: "③ 🤖 要約" },
   { id: "other", label: "④ ⚙️ その他" },
 ];
+
+/** モデル DL 状態の表示テキスト */
+function renderStatusText(status: ModelDlStatus): string {
+  switch (status) {
+    case "not-downloaded": return "❌ 未ダウンロード";
+    case "downloading":    return "⏳ DL中…";
+    case "downloaded":     return "✅ DL済";
+    case "error":          return "❌ DL失敗";
+  }
+}
 
 export class GijiSettingsTab extends PluginSettingTab {
   /** 現在アクティブな設定タブ */
@@ -555,7 +567,7 @@ export class GijiSettingsTab extends PluginSettingTab {
           .addOption("cloud", "クラウド")
           .setValue(local ? "local" : "cloud")
           .onChange(async (v: string) => {
-            const target: SttProviderId = v === "local" ? "qwen3-asr" : "openai";
+            const target: SttProviderId = v === "local" ? "whisper-local" : "openai";
             Object.assign(s, switchSttProvider(s, target));
             await this.save();
             await this.display();
@@ -579,23 +591,94 @@ export class GijiSettingsTab extends PluginSettingTab {
       });
 
     if (local) {
-      new Setting(content)
-        .setName("ASR サーバ URL")
-        .setDesc("ローカル qwen3-asr サーバ（既定: http://127.0.0.1:9000/v1）")
-        .addText((t) =>
-          t.setValue(s.sttBaseUrl).onChange(async (v: string) => {
-            s.sttBaseUrl = v;
-            await this.save();
-          })
-        );
+      if (s.sttProvider === "whisper-local") {
+        // 既定のモデル保存先（プラグインディレクトリ配下）
+        const defaultModelDir = `${this.plugin.manifest.dir}\\Model`;
 
-      if (s.sttProvider === "qwen3-asr") {
+        // ① モデル選択
         new Setting(content)
-          .setName("ASR モデル名")
-          .setDesc("Qwen3-ASR の model 名（既定: qwen3-asr-0.6b）。Whisper は固定のため非表示")
+          .setName("Whisper モデル")
+          .setDesc("tiny=75MB / small=488MB / medium=1.5GB")
+          .addDropdown((d) =>
+            d
+              .addOption("tiny", "Tiny（最速・75MB）")
+              .addOption("small", "Small（バランス・488MB）")
+              .addOption("medium", "Medium（高精度・1.5GB）")
+              .setValue(s.sttWhisperModel)
+              .onChange(async (v: string) => {
+                s.sttWhisperModel = v as WhisperModelId;
+                await this.save();
+                await this.display();
+              })
+          );
+
+        // ② モデル DL 状態 + ボタン（モデルごとに表示）
+        const modelDir = (s.sttWhisperModelDir || "").trim() || defaultModelDir;
+        for (const [id, info] of Object.entries(WHISPER_MODELS)) {
+          const modelId = id as WhisperModelId;
+          const runtime = getModelStatus(modelId);
+          // 実行時状態が未 DL でもディスク上にキャッシュがあれば DL 済と表示（プラグイン再起動対策）
+          const effective: ModelDlStatus =
+            runtime === "not-downloaded" && checkModelExists(modelId, modelDir)
+              ? "downloaded"
+              : runtime;
+          const setting = new Setting(content)
+            .setName(info.displayName)
+            .setDesc(`状態: ${renderStatusText(effective)}`);
+          if (effective === "not-downloaded" || effective === "error") {
+            setting.addButton((btn) =>
+              btn.setButtonText("📥 ダウンロード").onClick(async () => {
+                btn.setDisabled(true).setButtonText("DL中…");
+                try {
+                  // サーバ未起動なら自動起動してから DL
+                  await ensureWhisperLocalServer(s);
+                  await downloadWhisperModel(modelId, s.sttBaseUrl, (p) => {
+                    setting.setDesc(`状態: ⏳ DL中… ${p}%`);
+                  });
+                  new Notice(`✅ ${info.displayName} の DL 完了`);
+                } catch (e) {
+                  new Notice(`❌ DL 失敗: ${(e as Error).message}`);
+                } finally {
+                  btn.setDisabled(false).setButtonText("📥 ダウンロード");
+                  await this.display();
+                }
+              })
+            );
+          }
+        }
+
+        // ③ モデル保存先 + 📂 フォルダを開く
+        new Setting(content)
+          .setName("モデル保存先")
+          .setDesc(`既定: ${defaultModelDir}`)
           .addText((t) =>
-            t.setValue(s.sttModel).onChange(async (v: string) => {
-              s.sttModel = v;
+            t.setValue(s.sttWhisperModelDir || defaultModelDir).onChange(async (v: string) => {
+              s.sttWhisperModelDir = v;
+              await this.save();
+            })
+          )
+          .addButton((btn) =>
+            btn.setButtonText("📂 開く").onClick(async () => {
+              const dir = (s.sttWhisperModelDir || defaultModelDir).trim();
+              try {
+                mkdirSync(dir, { recursive: true });
+                // 遅延 require: 静的 import だと Node テスト環境で electron を解決できないため
+                const { shell } = require("electron");
+                const err = await shell.openPath(dir);
+                if (err) new Notice(`フォルダを開けませんでした: ${err}`);
+              } catch (e: any) {
+                new Notice(`フォルダを開けませんでした: ${e?.message ?? e}`);
+              }
+            })
+          );
+
+        // ④ ローカル Whisper サーバ URL
+        new Setting(content)
+          .setName("ローカル Whisper サーバ URL")
+          .setDesc("既定: http://127.0.0.1:9000/v1")
+          .addText((t) =>
+            t.setValue(s.sttBaseUrl).onChange(async (v: string) => {
+              s.sttBaseUrl = v;
               await this.save();
             })
           );

@@ -1,4 +1,5 @@
 import { Plugin, TFile } from "obsidian";
+import { join } from "path";
 import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
 import { startSegment, stopSegment } from "./commands/recordSegment";
 import { isTranscriptNote, summarizeFromNote } from "./commands/summarizeNote";
@@ -13,7 +14,7 @@ import { LLM_PRESETS } from "./providers/llmPresets";
 import { initLogRecorder, info as logInfo } from "./debug/logRecorder";
 import { setPluginContext } from "./audio/pluginContext";
 
-const STT_PROVIDERS = ["openai", "google", "groq", "qwen3-asr", "whisper-small", "mywhisper"];
+const STT_PROVIDERS = ["openai", "google", "groq", "whisper-local", "mywhisper"];
 export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 
 export default class GijiPlugin extends Plugin {
@@ -89,10 +90,14 @@ export default class GijiPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     // 廃止・未対応プロバイダー値のマイグレーション（例: doubao / 旧デフォルト groq）
     if (!STT_PROVIDERS.includes(this.settings.sttProvider)) {
-      this.settings.sttProvider = "qwen3-asr";
+      this.settings.sttProvider = "whisper-local";
     }
     if (!LLM_PROVIDERS.includes(this.settings.llmProvider)) {
       this.settings.llmProvider = "claudian";
+    }
+    // Whisper モデル保存先の既定値（未設定時のみ・初回ロード時に設定）
+    if (!this.settings.sttWhisperModelDir) {
+      this.settings.sttWhisperModelDir = join(this.manifest.dir ?? "", "Model");
     }
   }
 

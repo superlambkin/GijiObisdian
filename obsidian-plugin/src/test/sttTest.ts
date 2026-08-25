@@ -19,8 +19,8 @@ export async function runSttTest(
   }
   try {
     const provider = createSttProvider(settings, fetchImpl);
-    // ローカルプロバイダのみ Whisper サーバ自動起動を試みる（クラウドは対象外）
-    if (isLocalSttProvider(settings.sttProvider)) {
+    // whisper-local のみ Whisper サーバ自動起動を試みる（mywhisper は LAN 外部サーバ・クラウドは対象外）
+    if (settings.sttProvider === "whisper-local") {
       await ensureWhisperLocalServer(settings, { fetchImpl });
     }
     const text = await provider.transcribe(decodeTestAudio(), settings.sttLang);
