@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_SETTINGS,
   GijiSettingsTab,
-  isBridgeSettingDisabled,
   isLocalSttProvider,
   SETTINGS_TABS,
   clampSttConcurrency,
@@ -13,7 +12,6 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttProvider, "whisper-local");
   assert.equal(DEFAULT_SETTINGS.sttLang, "auto");
   assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
-  assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
   assert.equal(DEFAULT_SETTINGS.autoSaveTranscript, true);
   assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "議事録");
   assert.equal(DEFAULT_SETTINGS.outputDir, "議事録");
@@ -35,12 +33,9 @@ test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{year}}"));
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{second}}"));
   assert.equal(DEFAULT_SETTINGS.audioSource, "mix");
-  assert.equal(DEFAULT_SETTINGS.recordingMethod, "direct");
 });
 
 test("DEFAULT_SETTINGS has device id fields (empty by default)", () => {
-  assert.equal(DEFAULT_SETTINGS.bridgeMicDeviceId, "");
-  assert.equal(DEFAULT_SETTINGS.bridgeSpeakerDeviceId, "");
   assert.equal(DEFAULT_SETTINGS.directMicDeviceId, "");
   assert.equal(DEFAULT_SETTINGS.directSpeakerDeviceId, "");
 });
@@ -59,11 +54,6 @@ test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
   assert.equal(DEFAULT_SETTINGS.llmAdvancedOpen, false);
   assert.equal(DEFAULT_SETTINGS.llmApiFormatOverride, false);
   assert.equal(DEFAULT_SETTINGS.llmThinkingEnabled, false);
-});
-
-test("isBridgeSettingDisabled", () => {
-  assert.equal(isBridgeSettingDisabled("bridge"), false);
-  assert.equal(isBridgeSettingDisabled("direct"), true);
 });
 
 // 設定画面の 4 タブ構成（録音/文字起こし/要約/その他）
