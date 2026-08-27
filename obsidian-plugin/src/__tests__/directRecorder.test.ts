@@ -52,11 +52,16 @@ const settings = {
 function makeDeps(overrides: Partial<DirectRecorderDeps> = {}): Required<DirectRecorderDeps> {
   return {
     getUserMedia: async () => ({}) as MediaStream,
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
     enumerateDevices: async () => [],
     MediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+    AudioContextCtor: null as unknown as typeof AudioContext,
     writeFile: async () => {},
     deleteFile: async () => {},
     ffmpeg: async () => {},
+    spawnPcLoopbackCapture: async () => null,
     ...overrides,
   } as Required<DirectRecorderDeps>;
 }
@@ -266,4 +271,130 @@ test("start: mix で getDisplayMedia 音声なし（タブ音声未選択）→ 
   assert.equal(FakeMediaRecorder.instances.length, 1);
   const result = await r.stop(settings);
   assert.ok(result);
+});
+
+/* ---------------- v0.11: WASAPI ループバック PC 音声キャプチャ（getDisplayMedia 不可時のフォールバック） ---------------- */
+
+test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAPI キャプチャ開始", async () => {
+  FakeMediaRecorder.instances = [];
+  let spawnCalled = 0;
+  let capturedSpawn: { outPath: string; speakerId: string; bridgeDir: string } | null = null;
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath, speakerId, bridgeDir) => {
+      spawnCalled++;
+      capturedSpawn = { outPath, speakerId, bridgeDir };
+      return { stop: async () => outPath };
+    },
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  assert.equal(ok, true);
+  assert.equal(spawnCalled, 1, "WASAPI キャプチャが起動される");
+  assert.equal(capturedSpawn!.bridgeDir, "C:/bridge");
+  assert.equal(capturedSpawn!.speakerId, "");
+  assert.equal(FakeMediaRecorder.instances.length, 1, "マイクは MediaRecorder で録音");
+  const result = await r.stop(settings);
+  assert.ok(result);
+});
+
+test("stop: mix + WASAPI キャプチャ → ffmpeg がミックス引数（2 入力）で呼ばれる", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  const result = await r.stop(settings);
+  assert.ok(result, "stop は null でない");
+  assert.equal(ffmpegCalls.length, 1, "ffmpeg が 1 回呼ばれる");
+  const args = ffmpegCalls[0];
+  const inputCount = args.filter((a) => a === "-i").length;
+  assert.equal(inputCount, 2, "webm(mic) と wav(pc) の 2 入力でミックス");
+  assert.ok(args.some((a) => a.includes("amix=inputs=2")), "amix フィルタが使われる");
+  assert.equal(result!.audioPaths[0].endsWith(".mp3"), true);
+});
+
+test("start: pcLoopback で getDisplayMedia 失敗 → WASAPI キャプチャのみ・MediaRecorder なし", async () => {
+  FakeMediaRecorder.instances = [];
+  let gumCalled = 0;
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      gumCalled++;
+      return {} as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "pcLoopback", bridgeDir: "C:/bridge" } as any);
+  assert.equal(ok, true);
+  assert.equal(gumCalled, 0, "pcLoopback では getUserMedia は呼ばれない");
+  assert.equal(FakeMediaRecorder.instances.length, 0, "MediaRecorder は使わない");
+  assert.equal(r.isRecording(), true, "pcCapture により録音中");
+  const result = await r.stop(settings);
+  assert.ok(result);
+  assert.equal(result!.audioPaths[0].endsWith(".mp3"), true);
+});
+
+test("stop: pcLoopback + WASAPI → pc wav → mp3（ffmpeg 1 入力）", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "pcLoopback", bridgeDir: "C:/bridge" } as any);
+  const result = await r.stop(settings);
+  assert.ok(result);
+  assert.equal(ffmpegCalls.length, 1);
+  const inputCount = ffmpegCalls[0].filter((a) => a === "-i").length;
+  assert.equal(inputCount, 1, "pc wav のみ 1 入力");
+  assert.equal(result!.audioPaths[0].endsWith(".mp3"), true);
+});
+
+test("stop: mix + WASAPI キャプチャ → webm と pc wav の一時ファイルが削除される", async () => {
+  FakeMediaRecorder.instances = [];
+  const deleted: string[] = [];
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+    deleteFile: async (p: string) => {
+      deleted.push(p);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  const result = await r.stop(settings);
+  assert.ok(result);
+  assert.equal(deleted.filter((p) => p.endsWith(".webm")).length, 1, "webm が削除される");
+  assert.equal(deleted.filter((p) => p.endsWith(".wav")).length, 1, "pc wav が削除される");
 });
