@@ -175,7 +175,10 @@ def test_capture_errors_surfaced_in_stop_result(tmp_path, monkeypatch):
     _recorder._capture_errors["pc"] = "device disconnected"
     r = client.post("/record/stop", json={"sessionId": sid})
     assert r.status_code == 200
-    assert r.json()["captureErrors"] == {"pc": "device disconnected"}
+    errors = r.json()["captureErrors"]
+    # v0.8.5: 実ハード依存の mic エラー（Bluetooth HFP 等で open 失敗）も記録されるため、
+    # "pc" が含まれることのみ検証する（mic の有無は環境依存）
+    assert errors.get("pc") == "device disconnected"
 
 
 def test_audio_devices_endpoint_returns_mic_and_speakers(monkeypatch):

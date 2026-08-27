@@ -63,21 +63,24 @@ class Recorder:
 
         v0.5: ユーザーが設定画面で選んだデバイス（例: Bluetooth HFP マイク）を
         明示的に開くための入口。id は `sc.all_microphones()` が返すものと一致。
+        v0.8.5: デフォルトマイクは name ではなく id で解決（name 一致の環境依存を回避）。
         """
         if device_id:
             return sc.get_microphone(device_id, include_loopback=include_loopback)
-        return sc.get_microphone(sc.default_microphone().name, include_loopback=include_loopback)
+        dm = sc.default_microphone()
+        return sc.get_microphone(dm.id, include_loopback=include_loopback)
 
     def _resolve_speaker(self, device_id: Optional[str]):
         """device_id があれば get_microphone(speaker_id, include_loopback=True)、無ければ default_speaker()。
 
         v0.5: pcLoopback / mix モードでユーザー指定のスピーカーから PC 音声を
         キャプチャするための入口。
+        v0.8.5: デフォルトスピーカーは name ではなく id で解決（name 一致の環境依存を回避）。
         """
         if device_id:
             return sc.get_microphone(device_id, include_loopback=True)
         speaker = sc.default_speaker()
-        return sc.get_microphone(speaker.name, include_loopback=True)
+        return sc.get_microphone(speaker.id, include_loopback=True)
 
     def start(
         self,
@@ -167,10 +170,12 @@ class Recorder:
                     with self._lock:
                         self._frames[name].append(pcm)
         except Exception as e:  # pragma: no cover — depends on hardware
-            print(f"[recorder] {name} error: {e}")
+            # v0.8.5: AssertionError 等で str(e) が空文字になる場合に備え、分かりやすい既定メッセージを付与
+            msg = str(e) or f"{type(e).__name__}: {name} デバイスを開けませんでした（WASAPI 制約・Bluetooth HFP 等）"
+            print(f"[recorder] {name} error: {msg}")
             with self._lock:
                 if not self._capture_errors.get(name):
-                    self._capture_errors[name] = str(e)
+                    self._capture_errors[name] = msg
 
     def _write_wav(self, path: str, audio: np.ndarray) -> None:
         with wave.open(path, "wb") as wf:
@@ -181,7 +186,8 @@ class Recorder:
 
     def _encode_mp3(self, pcm: bytes, path: str) -> None:
         """ffmpeg（libmp3lame）で 16kHz mono PCM → MP3 64kbps CBR に変換する"""
-        subprocess.run(
+        import tempfile
+        proc = subprocess.run(
             [
                 "ffmpeg", "-y",
                 "-f", "s16le",
@@ -194,9 +200,24 @@ class Recorder:
                 path,
             ],
             input=pcm,
-            check=True,
+            check=False,
             capture_output=True,
         )
+        if proc.returncode != 0:
+            # DEBUG: ffmpeg 失敗時 stderr を退避して後で解析可能にする
+            dbg_path = os.path.join(tempfile.gettempdir(), "giji_ffmpeg_error.log")
+            try:
+                with open(dbg_path, "ab") as f:
+                    f.write(b"\n=== encode_mp3 fail ===\n")
+                    f.write(f"path: {path}\n".encode())
+                    f.write(f"returncode: {proc.returncode}\n".encode())
+                    f.write(f"pcm_bytes: {len(pcm)}\n".encode())
+                    f.write(b"stderr:\n")
+                    f.write(proc.stderr)
+                    f.write(b"\n")
+            except Exception:
+                pass
+            raise subprocess.CalledProcessError(proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr)
 
     def _save_mp3_segments(self, audio: np.ndarray, out_dir: str, name: str) -> list:
         """PCM を 24MB（64kbps 換算）以内の MP3 セグメントに分割して保存し、パス一覧を返す"""

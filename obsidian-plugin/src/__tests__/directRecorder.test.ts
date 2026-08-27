@@ -5,6 +5,19 @@ import { DirectRecorder, DirectRecorderDeps } from "../audio/directRecorder";
 import { buildRecordingFileName } from "../audio/recorder";
 import { GijiSettings } from "../settings";
 
+// ---- Fake AudioContext（v0.8.6: mix テスト用）----
+class FakeAudioContext {
+  static instances: FakeAudioContext[] = [];
+  closed = false;
+  dest = { stream: {} as MediaStream };
+  constructor() {
+    FakeAudioContext.instances.push(this);
+  }
+  createMediaStreamDestination() { return this.dest; }
+  createMediaStreamSource() { return { connect: () => {} }; }
+  close() { this.closed = true; return Promise.resolve(); }
+}
+
 // ---- Fake MediaRecorder（DOM 非依存・テスト用）----
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = [];
@@ -157,4 +170,100 @@ test("start: directMicDeviceId 空文字なら audio: true にフォールバッ
   const r = new DirectRecorder(deps);
   await r.start({ ...settings, directMicDeviceId: "" } as any);
   assert.deepEqual(captured, { audio: true });
+});
+
+test("start: audioSource=mix → getUserMedia + getDisplayMedia + AudioContext ミックス（v0.8.6）", async () => {
+  FakeMediaRecorder.instances = [];
+  FakeAudioContext.instances = [];
+  let gumCalled = 0;
+  let gdmCalled = 0;
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      gumCalled++;
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      gdmCalled++;
+      return {
+        getTracks: () => [{ stop() {} }],
+        getAudioTracks: () => [{ stop() {} }],
+      } as unknown as MediaStream;
+    },
+    AudioContextCtor: FakeAudioContext as unknown as typeof AudioContext,
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.equal(ok, true);
+  assert.equal(gumCalled, 1, "mix では getUserMedia が呼ばれる");
+  assert.equal(gdmCalled, 1, "mix では getDisplayMedia が呼ばれる");
+  assert.equal(FakeAudioContext.instances.length, 1, "AudioContext でミックス");
+  const result = await r.stop(settings);
+  assert.ok(result, "stop は null でない");
+  assert.equal(FakeAudioContext.instances[0].closed, true, "AudioContext は close される");
+});
+
+test("start: audioSource=pcLoopback → getUserMedia は呼ばれず getDisplayMedia のみ（v0.8.6）", async () => {
+  FakeMediaRecorder.instances = [];
+  let gumCalled = 0;
+  let gdmCalled = 0;
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      gumCalled++;
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      gdmCalled++;
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "pcLoopback" } as any);
+  assert.equal(ok, true);
+  assert.equal(gumCalled, 0, "pcLoopback では getUserMedia は呼ばれない");
+  assert.equal(gdmCalled, 1, "pcLoopback では getDisplayMedia が呼ばれる");
+  const result = await r.stop(settings);
+  assert.ok(result);
+});
+
+test("start: mix で getDisplayMedia 失敗 → マイクのみで録音継続（v0.8.7）", async () => {
+  FakeMediaRecorder.instances = [];
+  let gdmCalled = 0;
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      gdmCalled++;
+      const err = new Error("Permission denied") as Error & { name: string };
+      err.name = "NotAllowedError";
+      throw err;
+    },
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "mix" } as any);
+  // getDisplayMedia が失敗してもマイクのみで録音成功
+  assert.equal(ok, true);
+  assert.equal(gdmCalled, 1);
+  assert.equal(FakeMediaRecorder.instances.length, 1, "マイクのみで MediaRecorder 開始");
+  const result = await r.stop(settings);
+  assert.ok(result);
+});
+
+test("start: mix で getDisplayMedia 音声なし（タブ音声未選択）→ マイクのみで録音継続（v0.8.7）", async () => {
+  FakeMediaRecorder.instances = [];
+  const deps = makeDeps({
+    getUserMedia: async () => {
+      return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
+    },
+    getDisplayMedia: async () => {
+      // 音声トラックが無い（video のみ）を模擬
+      return { getTracks: () => [{ stop() {}, kind: "video" }] } as unknown as MediaStream;
+    },
+  });
+  const r = new DirectRecorder(deps);
+  const ok = await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.equal(ok, true, "音声なしでもマイクのみで録音成功");
+  assert.equal(FakeMediaRecorder.instances.length, 1);
+  const result = await r.stop(settings);
+  assert.ok(result);
 });

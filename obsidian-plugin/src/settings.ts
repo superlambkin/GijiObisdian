@@ -352,6 +352,8 @@ export class GijiSettingsTab extends PluginSettingTab {
             s.recordingMethod = v as RecordingMethodId;
             await this.save();
             updateBridgeDisabled(v);
+            // v0.8.6: 録音手法切替時は録音モードの選択肢を再構築（direct / bridge どちらも全オプション）
+            refreshAudioModeOptions();
             // v0.5: 手法切替時は対応モードのデバイス ID 表示に切替＋一覧を最新化
             micDeviceDropdown?.setValue(
               (s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId) || ""
@@ -360,6 +362,12 @@ export class GijiSettingsTab extends PluginSettingTab {
               (s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId) || ""
             );
             void repopulateDevices();
+            // v0.8.5: 録音モードが mic のままなら PC 音声が録音されないため案内
+            if (s.audioSource === "mic") {
+              new Notice(
+                "💡 PC 音声も録音するには「録音モード」を「マイク + PC 音声（WASAPI ループバック）」に切り替えてください"
+              );
+            }
           })
       );
 
@@ -367,16 +375,33 @@ export class GijiSettingsTab extends PluginSettingTab {
     let bridgeUrl: any;
     let bridgeDir: any;
 
+    /**
+     * v0.8.6: audioSource ドロップダウンを再構築する。
+     * direct / bridge どちらも mix / mic / pcLoopback を選択可能。
+     * - direct + mix: getDisplayMedia（画面共有）で PC 音声を取得しマイクとミックス
+     * - direct + pcLoopback: getDisplayMedia のみ
+     * - bridge + mix: WASAPI ループバック
+     */
+    const refreshAudioModeOptions = (): void => {
+      if (!audioMode) return;
+      audioMode.selectEl.innerHTML = "";
+      audioMode.addOption("mix", "マイク + PC 音声（WASAPI ループバック）");
+      audioMode.addOption("mic", "マイクのみ（従来）");
+      audioMode.addOption("pcLoopback", "PC 音声のみ（ループバック）");
+      const value = s.audioSource ?? "mix";
+      safeSetValue(audioMode, value);
+    };
+
     new Setting(content)
       .setName("🎙️ 録音モード")
-      .setDesc("Teams 会議時は「マイク + PC 音声」を推奨。PC 音声は WASAPI ループバックで取得します（Windows のみ・ブリッジ v0.2.0 以降が必要）")
+      .setDesc("PC 音声も録音するには「マイク + PC 音声」を選択。direct モードは画面共有ダイアログ、bridge モードは WASAPI ループバックで PC 音声を取得します")
       .addDropdown((d) => {
         audioMode = d;
-        d
-          .addOption("mix", "マイク + PC 音声（WASAPI ループバック）")
-          .addOption("mic", "マイクのみ（従来）")
-          .addOption("pcLoopback", "PC 音声のみ（ループバック）")
-          .setValue(s.audioSource ?? "mix")
+        // v0.8.6: direct / bridge どちらも全オプション表示
+        d.addOption("mix", "マイク + PC 音声（WASAPI ループバック）");
+        d.addOption("mic", "マイクのみ（従来）");
+        d.addOption("pcLoopback", "PC 音声のみ（ループバック）");
+        d.setValue(s.audioSource ?? "mix")
           .onChange(async (v: string) => {
             s.audioSource = v as AudioSourceId;
             await this.save();
@@ -393,6 +418,18 @@ export class GijiSettingsTab extends PluginSettingTab {
     let speakerDeviceDropdown: any;
     let refreshDevicesButton: any;
 
+    /**
+     * v0.8.4: setValue 安全化。指定 value が option に存在しない場合「（システム既定）」"" にフォールバック。
+     * これにより、保存済みデバイスIDが現在のデバイス一覧に無い場合でもドロップダウン表示が壊れない。
+     */
+    const safeSetValue = (dd: any, value: string): void => {
+      if (!dd) return;
+      const exists = Array.from(dd.selectEl?.options ?? []).some(
+        (o: any) => o.value === value
+      );
+      dd.setValue(exists ? value : "");
+    };
+
     const repopulateDevices = async () => {
       const got: DeviceListResult = await listDevices(s);
       // マイク側を再構築
@@ -400,13 +437,13 @@ export class GijiSettingsTab extends PluginSettingTab {
       micDeviceDropdown.addOption("", "（システム既定）");
       for (const m of got.microphones) micDeviceDropdown.addOption(m.id, m.name || m.id);
       const currentMicId = s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId;
-      micDeviceDropdown.setValue(currentMicId || "");
+      safeSetValue(micDeviceDropdown, currentMicId || "");
       // スピーカー側を再構築
       speakerDeviceDropdown.selectEl.innerHTML = "";
       speakerDeviceDropdown.addOption("", "（システム既定）");
       for (const sp of got.speakers) speakerDeviceDropdown.addOption(sp.id, sp.name || sp.id);
       const currentSpkId = s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId;
-      speakerDeviceDropdown.setValue(currentSpkId || "");
+      safeSetValue(speakerDeviceDropdown, currentSpkId || "");
       // desc 更新
       const micDesc =
         got.source === "bridge"
@@ -483,14 +520,16 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     const updateBridgeDisabled = (method: string) => {
       const disabled = isBridgeSettingDisabled(method);
-      audioMode?.setDisabled(disabled);
+      // v0.8.1: audioMode（録音モード）は両モードで使えるため常時有効（旧コードでは direct で無効化されていたバグ修正）
+      audioMode?.setDisabled(false);
       bridgeUrl?.setDisabled(disabled);
       bridgeDir?.setDisabled(disabled);
-      // v0.5: マイクドロップダウンは両モードで使うため常時有効、
-      // スピーカードロップダウンは direct モードでは getUserMedia が出力デバイスを
-      // 受け取らないためグレーアウトする
+      // v0.5: マイクドロップダウンは両モードで使うため常時有効
+      // v0.8.2: スピーカードロップダウンも常時有効化（旧コードでは direct でグレーアウトされていたバグ修正：
+      //   direct でもユーザー設定としては保存したい・UI で見えるようにしたい要望に対応。
+      //   実際に getUserMedia が出力デバイスを使うかは bridge 経由のため、direct 設定値は保持のみ）
       micDeviceDropdown?.setDisabled(false);
-      speakerDeviceDropdown?.setDisabled(disabled);
+      speakerDeviceDropdown?.setDisabled(false);
       refreshDevicesButton?.setDisabled(false);
     };
     updateBridgeDisabled(s.recordingMethod);
