@@ -1,7 +1,12 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
 import { createLlmProvider, getDefaultFetch, LlmCallStats } from "../providers/llm";
-import { isLlmConfigured } from "../providers/llmPresets";
+import {
+  isLlmConfigured,
+  LLM_PRESETS,
+  loadProviderProfile,
+  findFallbackLlmProvider,
+} from "../providers/llmPresets";
 import { writeDebugLog } from "../util/debugLog";
 import {
   loadMinutesTemplate,
@@ -43,7 +48,7 @@ export interface AutoSummarizeOptions {
 export interface AutoSummarizeResult {
   ok: boolean;
   error?: string;
-  skippedReason?: "disabled" | "no-llm-configured";
+  skippedReason?: "disabled" | "no-llm-configured" | "no-fallback-llm";
 }
 
 // isLlmConfigured は ../providers/llmPresets から import して使用
@@ -90,38 +95,67 @@ export async function runAutoSummarize(
       templateMd = undefined;
     }
 
+    // === claudian モード + insertToClaudianEnabled=false のフォールバック解決 ===
+    // activeSettings はそのまま cloud/ollama 経路で使われ、claudian 経路では settings のまま
+    let activeSettings: GijiSettings = settings;
     if (settings.llmProvider === "claudian") {
-      const startTime = opts.startTime ?? new Date();
-      const prompt = templateMd
-        ? buildClaudianMinutesPrompt(templateMd, transcript, settings.outputDir, startTime, {
-            durationSec: opts.durationSec,
-            mp3Links: opts.mp3Links,
-          })
-        : [
-            "以下の会議転写テキストを、構造化された議事録 Markdown として作成し、",
-            `Vault の ${settings.outputDir}/ に保存してください。`,
-            `【録音情報】開始時間=${formatStartTime(startTime)} / 会議時間=${opts.durationSec !== undefined ? `${Math.floor(opts.durationSec / 60)} 分 ${opts.durationSec % 60} 秒` : "不明"} / 録音ファイル=${opts.mp3Links ?? ""}`,
-            "",
-            "【転写テキスト】",
-            transcript,
-          ].join("\n");
-      const ok = await appendToClaudianInput(app, prompt);
-      if (!ok) {
-        new Notice("⚠️ Claudian プラグインが見つかりません（未インストールまたは未有効化）");
-        await emitSummarizeLog("fail", "mode=claudian reason=plugin-not-found");
-        return { ok: false, error: "Claudian プラグインが見つかりません（未インストールまたは未有効化）" };
+      // === claudian モード ===
+      if (!settings.insertToClaudianEnabled) {
+        // OFF の場合: fallback LLM（cloud/ollama の profile）を自動選択して生成
+        const fallbackId = findFallbackLlmProvider(settings);
+        if (!fallbackId) {
+          // fallback もない場合はエラー（議事録を保存できない）
+          new Notice(
+            "⚠️ Claudian への挿入設定が OFF かつ fallback LLM（cloud/ollama）も未設定のため、議事録を自動生成できません。設定 → ③ 要約 で cloud/ollama プロバイダの接続テストを実施してください"
+          );
+          await emitSummarizeLog("skipped", "reason=no-fallback-llm");
+          return { ok: false, skippedReason: "no-fallback-llm" };
+        }
+        // fallback で生成することを Notice でユーザーに通知
+        const fbDisplay = LLM_PRESETS[fallbackId].displayName;
+        new Notice(
+          `ℹ️ Claudian 挿入 OFF のため fallback LLM「${fbDisplay}」で議事録を生成します`
+        );
+        await emitSummarizeLog("skipped", `reason=fallback mode=${fallbackId}`);
+        // ↓ cloud / ollama 経路へそのまま進む（activeSettings で上書き）
+        activeSettings = loadProviderProfile(
+          { ...settings, llmProvider: fallbackId },
+          fallbackId
+        );
+      } else {
+        // === ON の場合: 既存挙動（Claudian 入力欄へプロンプト挿入） ===
+        const startTime = opts.startTime ?? new Date();
+        const prompt = templateMd
+          ? buildClaudianMinutesPrompt(templateMd, transcript, settings.outputDir, startTime, {
+              durationSec: opts.durationSec,
+              mp3Links: opts.mp3Links,
+            })
+          : [
+              "以下の会議転写テキストを、構造化された議事録 Markdown として作成し、",
+              `Vault の ${settings.outputDir}/ に保存してください。`,
+              `【録音情報】開始時間=${formatStartTime(startTime)} / 会議時間=${opts.durationSec !== undefined ? `${Math.floor(opts.durationSec / 60)} 分 ${opts.durationSec % 60} 秒` : "不明"} / 録音ファイル=${opts.mp3Links ?? ""}`,
+              "",
+              "【転写テキスト】",
+              transcript,
+            ].join("\n");
+        const ok = await appendToClaudianInput(app, prompt);
+        if (!ok) {
+          new Notice("⚠️ Claudian プラグインが見つかりません（未インストールまたは未有効化）");
+          await emitSummarizeLog("fail", "mode=claudian reason=plugin-not-found");
+          return { ok: false, error: "Claudian プラグインが見つかりません（未インストールまたは未有効化）" };
+        }
+        new Notice(
+          opts.force
+            ? "📋 Claudian に要約プロンプトを送信しました（進捗表示・上書きはありません）"
+            : "📋 Claudian に要約プロンプトを送信しました"
+        );
+        await emitSummarizeLog("ok", "mode=claudian");
+        return { ok: true };
       }
-      new Notice(
-        opts.force
-          ? "📋 Claudian に要約プロンプトを送信しました（進捗表示・上書きはありません）"
-          : "📋 Claudian に要約プロンプトを送信しました"
-      );
-      await emitSummarizeLog("ok", "mode=claudian");
-      return { ok: true };
     }
 
-    // cloud / ollama
-    const llm = createLlmProvider(settings, fetchImpl);
+    // cloud / ollama（fallback 経由含む）
+    const llm = createLlmProvider(activeSettings, fetchImpl);
     const systemPrompt = templateMd ? buildTemplateSystemPrompt(templateMd) : MINUTES_SYSTEM_PROMPT;
     opts.onProgress?.({ stage: "connecting" });
     const md = await llm.complete(systemPrompt, transcript, stats, {
@@ -171,7 +205,7 @@ export async function runAutoSummarize(
           ? `✅ 議事録を上書きしました（${totalSec} 秒）`
           : `✅ 議事録を生成しました（${totalSec} 秒）`
       );
-      await emitSummarizeLog("ok", `mode=${settings.llmProvider} out_chars=${out.length} overwrite=${overwritten}`);
+      await emitSummarizeLog("ok", `mode=${activeSettings.llmProvider} out_chars=${out.length} overwrite=${overwritten}`);
       return { ok: true };
     }
 
@@ -185,7 +219,7 @@ export async function runAutoSummarize(
     }
     await app.vault.create(path, out);
     new Notice(`✅ 議事録を生成しました（${totalSec} 秒）`);
-    await emitSummarizeLog("ok", `mode=${settings.llmProvider} out_chars=${out.length}`);
+    await emitSummarizeLog("ok", `mode=${activeSettings.llmProvider} out_chars=${out.length}`);
     return { ok: true };
   } catch (e) {
     const msg = (e as Error).message;
