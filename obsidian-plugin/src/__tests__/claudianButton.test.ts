@@ -1,10 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  shouldShowBridgeButton,
   saveTranscriptAndAutoSummarize,
   sttModelLabel,
 } from "../ui/claudianButton";
 import { DEFAULT_SETTINGS } from "../settings";
+
+test("shouldShowBridgeButton is true only for bridge", () => {
+  assert.equal(shouldShowBridgeButton("bridge"), true);
+  assert.equal(shouldShowBridgeButton("direct"), false);
+  assert.equal(shouldShowBridgeButton(""), false);
+});
 
 test("sttModelLabel returns short model name per provider", () => {
   assert.equal(sttModelLabel({ ...DEFAULT_SETTINGS, sttProvider: "whisper-local" }), "Whisper");

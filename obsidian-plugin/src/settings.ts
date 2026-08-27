@@ -60,6 +60,7 @@ export interface LlmProviderProfile {
 }
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
+export type RecordingMethodId = "bridge" | "direct";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -111,10 +112,17 @@ export interface GijiSettings {
   minutesTemplateVaultPath: string;
   minutesTemplateFile: string;
   // ① 録音
+  bridgeBaseUrl: string;
+  bridgeDir: string;
   recordingSaveDir: string;
   recordingFileNameTemplate: string;
   audioSource: AudioSourceId;
+  recordingMethod: RecordingMethodId;
   appendRecordEnabled: boolean;
+  /** ブリッジ録音時に使うマイクデバイス ID（soundcard の id フィールド）。空文字ならシステム既定 */
+  bridgeMicDeviceId: string;
+  /** ブリッジ録音時に使うスピーカーデバイス ID（pcLoopback/mix 用）。空文字ならシステム既定 */
+  bridgeSpeakerDeviceId: string;
   /** PC ダイレクト録音時に getUserMedia に渡すマイク deviceId。空文字ならシステム既定 */
   directMicDeviceId: string;
   /** PC ダイレクト録音時のスピーカー指定（getUserMedia は出力デバイスを受け取らないため現状は保存のみ） */
@@ -131,6 +139,11 @@ export interface GijiSettings {
 
 /** 録音ファイル保存場所のデフォルト（PC の絶対パス: C:\Users\<ユーザ名>\Music\GijiObsidian） */
 export const DEFAULT_RECORDING_SAVE_DIR = join(homedir(), "Music", "GijiObsidian");
+
+/** 録音手法がブリッジ以外（ダイレクト録音）のとき、ブリッジ関連設定をグレーアウトする */
+export function isBridgeSettingDisabled(recordingMethod: string): boolean {
+  return recordingMethod !== "bridge";
+}
 
 /** STT 並列度を有効範囲（1〜4）にクランプする */
 export function clampSttConcurrency(value: number): number {
@@ -169,10 +182,15 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   minutesTemplateSource: "vault",
   minutesTemplateVaultPath: "00_Vault管理/議事録テンプレート.md",
   minutesTemplateFile: "議事録テンプレート.md",
+  bridgeBaseUrl: "http://127.0.0.1:17890",
+  bridgeDir: "D:\\AI-Agent\\giji-obsidian\\recorder-bridge",
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
   audioSource: "mix",
+  recordingMethod: "direct",
   appendRecordEnabled: true,
+  bridgeMicDeviceId: "",
+  bridgeSpeakerDeviceId: "",
   directMicDeviceId: "",
   directSpeakerDeviceId: "",
   autoSaveTranscript: true,
@@ -319,19 +337,70 @@ export class GijiSettingsTab extends PluginSettingTab {
 
     new Setting(content)
       .setName("① 🎙️ 録音")
-      .setDesc("マイク → PC ダイレクト録音（Obsidian/Electron）で WAV を録音します")
+      .setDesc("マイク → ローカル録音ブリッジ（Python FastAPI）で WAV を録音します")
       .setHeading();
 
+    new Setting(content)
+      .setName("🎙️ 録音手法")
+      .setDesc("PC ダイレクト録音はブリッジ不要でマイクのみ。Teams 会議（PC 音声）はブリッジ録音を選択")
+      .addDropdown((d) =>
+        d
+          .addOption("bridge", "ブリッジ録音（Python・PC 音声対応）")
+          .addOption("direct", "PC ダイレクト録音（ブリッジ不要・マイクのみ）")
+          .setValue(s.recordingMethod)
+          .onChange(async (v: string) => {
+            s.recordingMethod = v as RecordingMethodId;
+            await this.save();
+            updateBridgeDisabled(v);
+            // v0.8.6: 録音手法切替時は録音モードの選択肢を再構築（direct / bridge どちらも全オプション）
+            refreshAudioModeOptions();
+            // v0.5: 手法切替時は対応モードのデバイス ID 表示に切替＋一覧を最新化
+            micDeviceDropdown?.setValue(
+              (s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId) || ""
+            );
+            speakerDeviceDropdown?.setValue(
+              (s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId) || ""
+            );
+            void repopulateDevices();
+            // v0.8.5: 録音モードが mic のままなら PC 音声が録音されないため案内
+            if (s.audioSource === "mic") {
+              new Notice(
+                "💡 PC 音声も録音するには「録音モード」を「マイク + PC 音声（WASAPI ループバック）」に切り替えてください"
+              );
+            }
+          })
+      );
+
     let audioMode: any;
+    let bridgeUrl: any;
+    let bridgeDir: any;
+
+    /**
+     * v0.8.6: audioSource ドロップダウンを再構築する。
+     * direct / bridge どちらも mix / mic / pcLoopback を選択可能。
+     * - direct + mix: getDisplayMedia（画面共有）で PC 音声を取得しマイクとミックス
+     * - direct + pcLoopback: getDisplayMedia のみ
+     * - bridge + mix: WASAPI ループバック
+     */
+    const refreshAudioModeOptions = (): void => {
+      if (!audioMode) return;
+      audioMode.selectEl.innerHTML = "";
+      audioMode.addOption("mix", "マイク + PC 音声（WASAPI ループバック）");
+      audioMode.addOption("mic", "マイクのみ（従来）");
+      audioMode.addOption("pcLoopback", "PC 音声のみ（ループバック）");
+      const value = s.audioSource ?? "mix";
+      safeSetValue(audioMode, value);
+    };
 
     new Setting(content)
       .setName("🎙️ 録音モード")
-      .setDesc("MIX はマイク + PC 音声を試みますが、Obsidian（Electron）では PC 音声を取得できずマイクのみで録音します")
+      .setDesc("PC 音声も録音するには「マイク + PC 音声」を選択。direct モードは画面共有ダイアログ、bridge モードは WASAPI ループバックで PC 音声を取得します")
       .addDropdown((d) => {
         audioMode = d;
-        d.addOption("mix", "マイク + PC 音声");
-        d.addOption("mic", "マイクのみ");
-        d.addOption("pcLoopback", "スピーカー（PC 音声のみ）");
+        // v0.8.6: direct / bridge どちらも全オプション表示
+        d.addOption("mix", "マイク + PC 音声（WASAPI ループバック）");
+        d.addOption("mic", "マイクのみ（従来）");
+        d.addOption("pcLoopback", "PC 音声のみ（ループバック）");
         d.setValue(s.audioSource ?? "mix")
           .onChange(async (v: string) => {
             s.audioSource = v as AudioSourceId;
@@ -339,6 +408,10 @@ export class GijiSettingsTab extends PluginSettingTab {
           });
       });
 
+    // v0.5: デバイス選択（マイク + スピーカー）
+    //   - recordingMethod === "bridge" → ブリッジの GET /audio/devices を使う
+    //   - bridge 不可達・direct → navigator.mediaDevices.enumerateDevices()
+    //   - いずれも失敗 → ドロップダウンに「（デバイス一覧未取得）」とだけ表示
     let micDeviceSetting: Setting;
     let speakerDeviceSetting: Setting;
     let micDeviceDropdown: any;
@@ -363,20 +436,26 @@ export class GijiSettingsTab extends PluginSettingTab {
       micDeviceDropdown.selectEl.innerHTML = "";
       micDeviceDropdown.addOption("", "（システム既定）");
       for (const m of got.microphones) micDeviceDropdown.addOption(m.id, m.name || m.id);
-      safeSetValue(micDeviceDropdown, s.directMicDeviceId || "");
+      const currentMicId = s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId;
+      safeSetValue(micDeviceDropdown, currentMicId || "");
       // スピーカー側を再構築
       speakerDeviceDropdown.selectEl.innerHTML = "";
       speakerDeviceDropdown.addOption("", "（システム既定）");
       for (const sp of got.speakers) speakerDeviceDropdown.addOption(sp.id, sp.name || sp.id);
-      safeSetValue(speakerDeviceDropdown, s.directSpeakerDeviceId || "");
+      const currentSpkId = s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId;
+      safeSetValue(speakerDeviceDropdown, currentSpkId || "");
       // desc 更新
       const micDesc =
-        got.source === "direct"
-          ? "ブラウザから取得"
-          : "（デバイス一覧が取得できませんでした）";
+        got.source === "bridge"
+          ? `ブリッジから取得（${got.microphones.length} マイク / ${got.speakers.length} スピーカー）`
+          : got.source === "direct"
+            ? `ブラウザから取得（direct モード用）`
+            : "（bridge 停止中・enumerateDevices も利用不可）";
       micDeviceSetting.setDesc(`録音に使うマイクデバイスを選択します。${micDesc}`);
       speakerDeviceSetting.setDesc(
-        "ダイレクト録音ではスピーカーはキャプチャ制御に使われません（設定保持のみ）"
+        s.recordingMethod === "direct"
+          ? "PC ダイレクト録音ではスピーカー制御不可（getUserMedia は入力のみ対応）"
+          : "ブリッジ録音で PC 音声キャプチャに使われるスピーカーを選択します（pcLoopback / mix 用）"
       );
     };
 
@@ -385,8 +464,11 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setDesc("録音に使うマイクデバイスを選択します（初回は「🔄 デバイス一覧を更新」を押してください）")
       .addDropdown((d) => {
         micDeviceDropdown = d;
-        d.addOption("", "（システム既定）").setValue(s.directMicDeviceId || "").onChange(async (v: string) => {
-          s.directMicDeviceId = v;
+        d.addOption("", "（システム既定）").setValue(
+          (s.recordingMethod === "bridge" ? s.bridgeMicDeviceId : s.directMicDeviceId) || ""
+        ).onChange(async (v: string) => {
+          if (s.recordingMethod === "bridge") s.bridgeMicDeviceId = v;
+          else s.directMicDeviceId = v;
           await this.save();
         });
       })
@@ -403,15 +485,54 @@ export class GijiSettingsTab extends PluginSettingTab {
       });
 
     speakerDeviceSetting = new Setting(content)
-      .setName("🔊 録音用スピーカーデバイス（設定保持のみ）")
-      .setDesc("ダイレクト録音ではスピーカーはキャプチャ制御に使われません（設定保持のみ）")
+      .setName("🔊 録音用スピーカーデバイス（pcLoopback / mix 用）")
+      .setDesc("ブリッジ録音で PC 音声キャプチャに使われるスピーカーを選択します")
       .addDropdown((d) => {
         speakerDeviceDropdown = d;
-        d.addOption("", "（システム既定）").setValue(s.directSpeakerDeviceId || "").onChange(async (v: string) => {
-          s.directSpeakerDeviceId = v;
+        d.addOption("", "（システム既定）").setValue(
+          (s.recordingMethod === "bridge" ? s.bridgeSpeakerDeviceId : s.directSpeakerDeviceId) || ""
+        ).onChange(async (v: string) => {
+          if (s.recordingMethod === "bridge") s.bridgeSpeakerDeviceId = v;
+          else s.directSpeakerDeviceId = v;
           await this.save();
         });
       });
+
+    new Setting(content)
+      .setName("ブリッジ URL")
+      .addText((t) => {
+        bridgeUrl = t;
+        t.setValue(s.bridgeBaseUrl).onChange(async (v: string) => {
+          s.bridgeBaseUrl = v;
+          await this.save();
+        });
+      });
+
+    new Setting(content)
+      .setName("ブリッジのディレクトリ")
+      .addText((t) => {
+        bridgeDir = t;
+        t.setValue(s.bridgeDir).onChange(async (v: string) => {
+          s.bridgeDir = v;
+          await this.save();
+        });
+      });
+
+    const updateBridgeDisabled = (method: string) => {
+      const disabled = isBridgeSettingDisabled(method);
+      // v0.8.1: audioMode（録音モード）は両モードで使えるため常時有効（旧コードでは direct で無効化されていたバグ修正）
+      audioMode?.setDisabled(false);
+      bridgeUrl?.setDisabled(disabled);
+      bridgeDir?.setDisabled(disabled);
+      // v0.5: マイクドロップダウンは両モードで使うため常時有効
+      // v0.8.2: スピーカードロップダウンも常時有効化（旧コードでは direct でグレーアウトされていたバグ修正：
+      //   direct でもユーザー設定としては保存したい・UI で見えるようにしたい要望に対応。
+      //   実際に getUserMedia が出力デバイスを使うかは bridge 経由のため、direct 設定値は保持のみ）
+      micDeviceDropdown?.setDisabled(false);
+      speakerDeviceDropdown?.setDisabled(false);
+      refreshDevicesButton?.setDisabled(false);
+    };
+    updateBridgeDisabled(s.recordingMethod);
 
     new Setting(content)
       .setName("録音ファイルの保存場所")
