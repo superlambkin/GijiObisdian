@@ -19,6 +19,13 @@ export async function importAudioFlow(app: App, settings: GijiSettings, manifest
       // Claudian（デフォルト）: 要約プロンプトを Claudian 入力欄に挿入し、
       // Claudian のエージェントがテンプレートに従って議事録 MD を作成・保存する
       if (settings.llmProvider === "claudian") {
+        // 設定「結果を Claudian 入力欄に挿入」が OFF の場合はスキップ
+        if (!settings.insertToClaudianEnabled) {
+          new Notice(
+            "⚠️ Claudian への挿入設定が OFF のため、要約プロンプトを挿入しませんでした（議事録を生成するには LLM プロバイダを cloud/ollama に切り替えるか、設定を ON にしてください）"
+          );
+          return;
+        }
         const transcript = await transcribeAudio(buf, settings);
         const template = await loadMinutesTemplate(app, settings, manifestDir);
         const prompt = buildClaudianMinutesPrompt(

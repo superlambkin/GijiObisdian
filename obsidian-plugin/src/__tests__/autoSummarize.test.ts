@@ -163,6 +163,82 @@ test("claudian: missing plugin returns error result", async () => {
   assert.match(res.error ?? "", /Claudian プラグインが見つかりません/);
 });
 
+test("claudian: insertToClaudianEnabled=false かつ fallback 未設定 → no-fallback-llm", async () => {
+  const appendCalls: string[] = [];
+  const fakeApp: any = {
+    plugins: {
+      plugins: {
+        realclaudian: {
+          activateView: async () => {},
+          getView: () => ({ appendToActiveInput: (t: string) => (appendCalls.push(t), true) }),
+        },
+      },
+    },
+  };
+  const res = await runAutoSummarize(
+    "transcript body",
+    { ...baseSettings, llmProvider: "claudian", insertToClaudianEnabled: false },
+    fakeApp,
+    "/manifest/dir"
+  );
+  // fallback 未設定 → スキップ
+  assert.equal(res.ok, false);
+  assert.equal(res.skippedReason, "no-fallback-llm");
+  // Claudian への挿入は 0 回
+  assert.equal(appendCalls.length, 0);
+});
+
+test("claudian: insertToClaudianEnabled=false かつ fallback 設定済 → fallback LLM で生成", async () => {
+  const appendCalls: string[] = [];
+  let createdPath: string | null = null;
+  const fakeApp: any = {
+    plugins: {
+      plugins: {
+        realclaudian: {
+          activateView: async () => {},
+          getView: () => ({ appendToActiveInput: (t: string) => (appendCalls.push(t), true) }),
+        },
+      },
+    },
+    vault: {
+      adapter: {},
+      async create(path: string) { createdPath = path; },
+      async exists() { return false; },
+    },
+  };
+  const fetchImpl = (async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: "| 🕐 開始時間 | X |\nfallback で生成" } }] }),
+  })) as any;
+  const settingsWithFallback: any = {
+    ...baseSettings,
+    llmProvider: "claudian",
+    insertToClaudianEnabled: false,
+    // kimi プロファイルに API キー設定済（fallback 候補として優先）
+    llmProviderProfiles: {
+      kimi: {
+        llmApiKey: "sk-kimi-test",
+        llmBaseUrl: "https://api.moonshot.cn/v1",
+        llmModel: "moonshot-v1-128k",
+        llmApiFormat: "openai",
+        llmMaxTokens: 32000,
+      },
+    },
+  };
+  const res = await runAutoSummarize(
+    "transcript body",
+    settingsWithFallback,
+    fakeApp,
+    "/manifest/dir",
+    { fetchImpl }
+  );
+  // fallback で cloud/ollama 経路 → vault.create が呼ばれる
+  assert.equal(res.ok, true);
+  assert.ok(createdPath, "fallback LLM で vault.create が呼ばれるはず");
+  // Claudian への挿入は 0 回
+  assert.equal(appendCalls.length, 0, "Claudian 入力欄には挿入されない");
+});
+
 test("cloud: LLM 401 surfaces error", async () => {
   const fetchImpl = (async () => ({
     ok: false,

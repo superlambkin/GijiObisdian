@@ -267,6 +267,34 @@ export function getPreset(id: string): LlmPresetConfig | undefined {
 }
 
 /**
+ * claudian モードで `insertToClaudianEnabled = false` のときに使う
+ * fallback LLM プロバイダを llmProviderProfiles から自動検出する。
+ *
+ * 走査順序: PRESET_DISPLAY_ORDER（推奨プロバイダが上位）
+ * スキップ条件:
+ *   - "claudian" 自体（API キー不要だが入力欄挿入のため無意味）
+ *   - プロファイルが未登録のプロバイダ
+ *   - `preset.requiresApiKey = true` かつ API キーが空
+ *   - baseUrl / model が空
+ *
+ * @returns fallback プロバイダ ID。該当なしは null。
+ */
+export function findFallbackLlmProvider(settings: GijiSettings): LlmPresetId | null {
+  const profiles = settings.llmProviderProfiles ?? {};
+  for (const presetId of PRESET_DISPLAY_ORDER) {
+    if (presetId === "claudian") continue;
+    const profile = profiles[presetId];
+    if (!profile) continue;
+    const preset = LLM_PRESETS[presetId];
+    if (!preset) continue;
+    if (preset.requiresApiKey && !profile.llmApiKey?.trim()) continue;
+    if (!profile.llmBaseUrl?.trim() || !profile.llmModel?.trim()) continue;
+    return presetId;
+  }
+  return null;
+}
+
+/**
  * LLM 設定が完了しているか判定する（接続テスト・runAutoSummarize で共用）。
  * - claudian: プラグイン検出側で判定するので true 固定
  * - その他: baseUrl / model 必須 + preset.requiresApiKey なら apiKey 必須
