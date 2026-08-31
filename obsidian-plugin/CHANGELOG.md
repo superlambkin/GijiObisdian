@@ -2,6 +2,15 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.12.0 (2026-08-31)
+### Changed
+- ブリッジ録音（recorder-bridge）を完全削除し、ダイレクト録音のみに統一
+- PC 音声（TEAMS 含む）を WASAPI ループバック同梱スクリプトでキャプチャ
+- MP3 変換をシステム ffmpeg CLI → wasm（@ffmpeg/ffmpeg）に統一
+- 文字起こし既定を whisper-local → クラウド groq に変更
+- sttServerDir / bridgeDir の D:\AI-Agent ハードコードを空文字に
+- whisper-local は spawn 復活＋外部モデルフォルダ参照（sttWhisperModelDir）
+
 ## [0.11.0] - 2026-08-28
 
 ### 🎙️ PC ダイレクト録音で PC 音声（システム音）キャプチャ対応
