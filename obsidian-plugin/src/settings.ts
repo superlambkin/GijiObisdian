@@ -156,7 +156,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   sttBaseUrl: "http://127.0.0.1:9000/v1",
   sttWhisperModel: "small",
   sttWhisperModelDir: "",
-  sttServerDir: "D:\\AI-Agent\\giji-obsidian\\whisper-local-server",
+  sttServerDir: "D:\\AI-Agent\\GijiObsidian\\whisper-local-server",
   sttLang: "auto",
   sttMaxConcurrency: 2,
   sttProviderProfiles: {},
@@ -183,7 +183,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   minutesTemplateVaultPath: "00_Vault管理/議事録テンプレート.md",
   minutesTemplateFile: "議事録テンプレート.md",
   bridgeBaseUrl: "http://127.0.0.1:17890",
-  bridgeDir: "D:\\AI-Agent\\giji-obsidian\\recorder-bridge",
+  bridgeDir: "D:\\AI-Agent\\GijiObsidian\\recorder-bridge",
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
   audioSource: "mix",
@@ -1049,7 +1049,7 @@ export class GijiSettingsTab extends PluginSettingTab {
 
       new Setting(content)
         .setName("📝 デバッグログ出力")
-        .setDesc("ON で giji-obsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
+        .setDesc("ON で GijiObsidian/logs/ に日次ログを書き出します。プラグイン性能調査用。")
         .addToggle((t) =>
           t.setValue(s.debugLog).onChange(async (v: boolean) => {
             s.debugLog = v;

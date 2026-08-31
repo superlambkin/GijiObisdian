@@ -40,7 +40,7 @@ function mockApp(files: Map<string, string>) {
 test("ensureTemplatesDir creates dir + default template, and does not overwrite", async () => {
   const files = new Map<string, string>();
   const app = mockApp(files);
-  const dir = ".obsidian/plugins/giji-obsidian";
+  const dir = ".obsidian/plugins/GijiObsidian";
   await ensureTemplatesDir(app, dir);
   const defPath = `${dir}/templates/${DEFAULT_TEMPLATE_FILE_NAME}`;
   assert.ok(files.has(defPath), "デフォルトテンプレートが格納されること");

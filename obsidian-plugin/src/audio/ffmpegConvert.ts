@@ -33,7 +33,7 @@ async function loadFFmpegAssetURLs(): Promise<FFmpegAssetURLs> {
     throw new Error("plugin context not initialized (App reference missing)");
   }
   const adapter = app.vault.adapter;
-  const pluginId = "giji-obsidian";
+  const pluginId = "GijiObsidian";
   const base = `.obsidian/plugins/${pluginId}`;
   const [workerCode, coreCode, wasmBuffer] = await Promise.all([
     adapter.read(`${base}/worker.js`),

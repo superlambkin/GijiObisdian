@@ -73,7 +73,7 @@ const context = await esbuild.context({
 
 if (watch) {
   await context.watch();
-  console.log("[giji-obsidian] watching…");
+  console.log("[GijiObsidian] watching…");
 } else {
   await context.rebuild();
   await context.dispose();

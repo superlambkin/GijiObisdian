@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from "../settings";
 const base = {
   ...DEFAULT_SETTINGS,
   sttBaseUrl: "http://127.0.0.1:9000/v1",
-  sttServerDir: "D:\\AI-Agent\\giji-obsidian\\whisper-local-server",
+  sttServerDir: "D:\\AI-Agent\\GijiObsidian\\whisper-local-server",
   sttWhisperModel: "small" as const,
 };
 

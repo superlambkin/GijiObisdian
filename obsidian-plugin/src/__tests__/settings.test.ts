@@ -27,7 +27,7 @@ test("DEFAULT_SETTINGS has required fields", () => {
 
 test("DEFAULT_SETTINGS includes whisper-local fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
-  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\giji-obsidian\\whisper-local-server");
+  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\GijiObsidian\\whisper-local-server");
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {

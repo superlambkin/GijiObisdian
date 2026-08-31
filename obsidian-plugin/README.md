@@ -30,7 +30,7 @@
 
 ## 🚀 インストール
 
-1. Obsidian の `.obsidian/plugins/giji-obsidian/` フォルダに本プラグインを配置
+1. Obsidian の `.obsidian/plugins/GijiObsidian/` フォルダに本プラグインを配置
 2. `main.js` / `manifest.json` を配置
 3. Obsidian の「コミュニティプラグイン」で **GijiObsidian** を有効化
 4. 設定タブで STT / LLM の API キーを入力

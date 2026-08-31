@@ -150,7 +150,7 @@ applied_rules_version: 2.11.0
 | v1.0.0 | YYYY-MM-DD HH:MM | 初版（転写テキストから議事録を作成） | 作成者 |
 `;
 
-/** テンプレートフォルダの Vault 相対パス（例: .obsidian/plugins/giji-obsidian/templates） */
+/** テンプレートフォルダの Vault 相対パス（例: .obsidian/plugins/GijiObsidian/templates） */
 export function templatesDir(manifestDir: string): string {
   return `${manifestDir}/templates`;
 }
