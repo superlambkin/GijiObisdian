@@ -46,7 +46,7 @@ export default class GijiPlugin extends Plugin {
     this.addCommand({
       id: "record-start",
       name: "开始录音（会议分段）",
-      callback: () => startSegment(this.app, this.settings, this.recordingTimer),
+      callback: () => startSegment(this.app, this.settings, this.manifest.dir, this.recordingTimer),
     });
     this.addCommand({
       id: "record-stop",

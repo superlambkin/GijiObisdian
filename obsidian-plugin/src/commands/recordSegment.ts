@@ -13,8 +13,8 @@ function getRecorder(app: App, manifestDir: string = ""): SegmentRecorder {
   return recorder;
 }
 
-export async function startSegment(app: App, settings: GijiSettings, timer?: RecordingTimer) {
-  const r = getRecorder(app);
+export async function startSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
+  const r = getRecorder(app, manifestDir);
   const started = await r.start(settings);
   if (started) {
     timer?.start();
