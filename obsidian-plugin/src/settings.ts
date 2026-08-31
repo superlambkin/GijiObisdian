@@ -60,7 +60,6 @@ export interface LlmProviderProfile {
 }
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
-export type RecordingMethodId = "bridge" | "direct";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -112,21 +111,16 @@ export interface GijiSettings {
   minutesTemplateVaultPath: string;
   minutesTemplateFile: string;
   // ① 録音
-  bridgeBaseUrl: string;
-  bridgeDir: string;
   recordingSaveDir: string;
   recordingFileNameTemplate: string;
   audioSource: AudioSourceId;
-  recordingMethod: RecordingMethodId;
   appendRecordEnabled: boolean;
-  /** ブリッジ録音時に使うマイクデバイス ID（soundcard の id フィールド）。空文字ならシステム既定 */
-  bridgeMicDeviceId: string;
-  /** ブリッジ録音時に使うスピーカーデバイス ID（pcLoopback/mix 用）。空文字ならシステム既定 */
-  bridgeSpeakerDeviceId: string;
   /** PC ダイレクト録音時に getUserMedia に渡すマイク deviceId。空文字ならシステム既定 */
   directMicDeviceId: string;
   /** PC ダイレクト録音時のスピーカー指定（getUserMedia は出力デバイスを受け取らないため現状は保存のみ） */
   directSpeakerDeviceId: string;
+  /** WASAPI ループバック同梱スクリプトのディレクトリ（空文字なら同梱既定 manifest.dir） */
+  pcLoopbackScriptDir: string;
   // ② 文字起こし（保存・挿入）
   autoSaveTranscript: boolean;
   transcriptSaveDir: string;
@@ -140,23 +134,18 @@ export interface GijiSettings {
 /** 録音ファイル保存場所のデフォルト（PC の絶対パス: C:\Users\<ユーザ名>\Music\GijiObsidian） */
 export const DEFAULT_RECORDING_SAVE_DIR = join(homedir(), "Music", "GijiObsidian");
 
-/** 録音手法がブリッジ以外（ダイレクト録音）のとき、ブリッジ関連設定をグレーアウトする */
-export function isBridgeSettingDisabled(recordingMethod: string): boolean {
-  return recordingMethod !== "bridge";
-}
-
 /** STT 並列度を有効範囲（1〜4）にクランプする */
 export function clampSttConcurrency(value: number): number {
   return Math.max(1, Math.min(4, Math.floor(value)));
 }
 
 export const DEFAULT_SETTINGS: GijiSettings = {
-  sttProvider: "whisper-local",
+  sttProvider: "groq",
   sttApiKey: "",
   sttBaseUrl: "http://127.0.0.1:9000/v1",
   sttWhisperModel: "small",
   sttWhisperModelDir: "",
-  sttServerDir: "D:\\AI-Agent\\GijiObsidian\\whisper-local-server",
+  sttServerDir: "",
   sttLang: "auto",
   sttMaxConcurrency: 2,
   sttProviderProfiles: {},
@@ -182,17 +171,13 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   minutesTemplateSource: "vault",
   minutesTemplateVaultPath: "00_Vault管理/議事録テンプレート.md",
   minutesTemplateFile: "議事録テンプレート.md",
-  bridgeBaseUrl: "http://127.0.0.1:17890",
-  bridgeDir: "D:\\AI-Agent\\GijiObsidian\\recorder-bridge",
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
   audioSource: "mix",
-  recordingMethod: "direct",
   appendRecordEnabled: true,
-  bridgeMicDeviceId: "",
-  bridgeSpeakerDeviceId: "",
   directMicDeviceId: "",
   directSpeakerDeviceId: "",
+  pcLoopbackScriptDir: "",
   autoSaveTranscript: true,
   transcriptSaveDir: "議事録",
   fileNameTemplate: "議事録_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分",

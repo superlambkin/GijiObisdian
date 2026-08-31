@@ -3,17 +3,15 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_SETTINGS,
   GijiSettingsTab,
-  isBridgeSettingDisabled,
   isLocalSttProvider,
   SETTINGS_TABS,
   clampSttConcurrency,
 } from "../settings";
 
 test("DEFAULT_SETTINGS has required fields", () => {
-  assert.equal(DEFAULT_SETTINGS.sttProvider, "whisper-local");
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "groq");
   assert.equal(DEFAULT_SETTINGS.sttLang, "auto");
   assert.equal(DEFAULT_SETTINGS.llmProvider, "claudian");
-  assert.equal(DEFAULT_SETTINGS.bridgeBaseUrl, "http://127.0.0.1:17890");
   assert.equal(DEFAULT_SETTINGS.autoSaveTranscript, true);
   assert.equal(DEFAULT_SETTINGS.transcriptSaveDir, "議事録");
   assert.equal(DEFAULT_SETTINGS.outputDir, "議事録");
@@ -27,7 +25,7 @@ test("DEFAULT_SETTINGS has required fields", () => {
 
 test("DEFAULT_SETTINGS includes whisper-local fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
-  assert.equal(DEFAULT_SETTINGS.sttServerDir, "D:\\AI-Agent\\GijiObsidian\\whisper-local-server");
+  assert.equal(DEFAULT_SETTINGS.sttServerDir, "");
 });
 
 test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
@@ -35,12 +33,9 @@ test("DEFAULT_SETTINGS has recording save dir + file name template", () => {
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{year}}"));
   assert.ok(DEFAULT_SETTINGS.recordingFileNameTemplate.includes("{{second}}"));
   assert.equal(DEFAULT_SETTINGS.audioSource, "mix");
-  assert.equal(DEFAULT_SETTINGS.recordingMethod, "direct");
 });
 
 test("DEFAULT_SETTINGS has device id fields (empty by default)", () => {
-  assert.equal(DEFAULT_SETTINGS.bridgeMicDeviceId, "");
-  assert.equal(DEFAULT_SETTINGS.bridgeSpeakerDeviceId, "");
   assert.equal(DEFAULT_SETTINGS.directMicDeviceId, "");
   assert.equal(DEFAULT_SETTINGS.directSpeakerDeviceId, "");
 });
@@ -59,11 +54,6 @@ test("DEFAULT_SETTINGS has simplified LLM defaults", () => {
   assert.equal(DEFAULT_SETTINGS.llmAdvancedOpen, false);
   assert.equal(DEFAULT_SETTINGS.llmApiFormatOverride, false);
   assert.equal(DEFAULT_SETTINGS.llmThinkingEnabled, false);
-});
-
-test("isBridgeSettingDisabled", () => {
-  assert.equal(isBridgeSettingDisabled("bridge"), false);
-  assert.equal(isBridgeSettingDisabled("direct"), true);
 });
 
 // 設定画面の 4 タブ構成（録音/文字起こし/要約/その他）
@@ -179,8 +169,19 @@ test("LLM 接続テスト失敗時は saveSettings が呼ばれない", async ()
   }
 });
 
-test("DEFAULT_SETTINGS defaults to local whisper", () => {
-  assert.equal(DEFAULT_SETTINGS.sttProvider, "whisper-local");
+test("DEFAULT_SETTINGS defaults to cloud groq", () => {
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "groq");
+});
+
+test("DEFAULT_SETTINGS sttProvider はクラウド groq 既定", () => {
+  assert.equal(DEFAULT_SETTINGS.sttProvider, "groq");
+});
+test("DEFAULT_SETTINGS は bridge 設定を持たない", () => {
+  assert.ok(!("recordingMethod" in DEFAULT_SETTINGS));
+  assert.ok(!("bridgeBaseUrl" in DEFAULT_SETTINGS));
+  assert.ok(!("bridgeDir" in DEFAULT_SETTINGS));
+  assert.equal(DEFAULT_SETTINGS.sttServerDir, "");
+  assert.equal(DEFAULT_SETTINGS.pcLoopbackScriptDir, "");
 });
 
 test("isLocalSttProvider categorizes providers", () => {
