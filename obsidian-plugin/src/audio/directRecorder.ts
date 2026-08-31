@@ -1,8 +1,8 @@
 import { Notice } from "obsidian";
 import { spawn as nodeSpawn } from "child_process";
-import { writeFile as fsWriteFile, unlink as fsUnlink } from "fs";
+import { readFileSync, writeFile as fsWriteFile, unlink as fsUnlink } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { extname, join } from "path";
 import { App } from "obsidian";
 import { GijiSettings } from "../settings";
 import { buildRecordingFileName } from "./recorder";
@@ -72,10 +72,75 @@ const defaultDeleteFile = (path: string): Promise<void> =>
     fsUnlink(path, (err) => (err ? reject(err) : resolve()));
   });
 
-/** wasm FFmpeg ラッパー: ffmpegConvert のロード済みインスタンスを再利用して exec する */
+/** wasm FFmpeg の exec 用に書き換えた引数・ホストパス↔仮想パスの対応 */
+export interface WasmFfmpegRewrite {
+  execArgs: string[];
+  inputs: { hostPath: string; virtualName: string }[];
+  output: { hostPath: string; virtualName: string };
+}
+
+/**
+ * ホストパス混在の ffmpeg CLI 引数を、@ffmpeg/ffmpeg の MEMFS（仮想 FS）用に書き換える。
+ *
+ * - `-i` の直後の値（入力ホストパス）を `input-N<ext>` へ置換（出現順を維持）
+ * - 末尾の出力パスを `output<ext>` へ置換（末尾がフラグの場合はその手前を出力とする）
+ * - それ以外のフラグ・フィルタ（`-filter_complex` / `amix` 等）は不変で維持
+ */
+export function rewriteFfmpegArgsForWasm(args: string[]): WasmFfmpegRewrite {
+  const inputs: { hostPath: string; virtualName: string }[] = [];
+  const execArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "-i" && i + 1 < args.length) {
+      const hostPath = args[i + 1];
+      const virtualName = `input-${inputs.length}${extname(hostPath)}`;
+      inputs.push({ hostPath, virtualName });
+      execArgs.push("-i", virtualName);
+      i++; // 入力値は処理済み
+    } else {
+      execArgs.push(args[i]);
+    }
+  }
+  let outputIndex = execArgs.length - 1;
+  if (outputIndex >= 0 && execArgs[outputIndex].startsWith("-")) {
+    outputIndex -= 1; // `-f` など末尾フラグの手前が出力パス
+  }
+  if (outputIndex < 0 || execArgs[outputIndex].startsWith("-")) {
+    throw new Error("ffmpeg 出力パスを特定できません");
+  }
+  const hostOutput = execArgs[outputIndex];
+  const virtualOutput = `output${extname(hostOutput)}`;
+  execArgs[outputIndex] = virtualOutput;
+  return {
+    execArgs,
+    inputs,
+    output: { hostPath: hostOutput, virtualName: virtualOutput },
+  };
+}
+
+/**
+ * wasm FFmpeg ラッパー: ホストパスを MEMFS に読み込み exec 後に結果をホストへ書き戻す。
+ * ffmpegConvert のロード済みインスタンスを再利用する（ensureFfmpegLoaded）。
+ */
 const defaultFfmpeg = async (args: string[]): Promise<void> => {
   const ff = await ensureFfmpegLoaded();
-  await ff.exec(args);
+  const { execArgs, inputs, output } = rewriteFfmpegArgsForWasm(args);
+  for (const input of inputs) {
+    const bytes = readFileSync(input.hostPath);
+    await ff.writeFile(input.virtualName, new Uint8Array(bytes));
+  }
+  try {
+    await ff.exec(execArgs);
+    const data = await ff.readFile(output.virtualName);
+    const bytes = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);
+    await new Promise<void>((resolve, reject) => {
+      fsWriteFile(output.hostPath, Buffer.from(bytes), (err) => (err ? reject(err) : resolve()));
+    });
+  } finally {
+    await Promise.allSettled([
+      ...inputs.map((input) => ff.deleteFile(input.virtualName)),
+      ff.deleteFile(output.virtualName),
+    ]);
+  }
 };
 
 /**

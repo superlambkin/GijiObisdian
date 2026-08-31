@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { basename } from "path";
-import { DirectRecorder, DirectRecorderDeps } from "../audio/directRecorder";
+import { DirectRecorder, DirectRecorderDeps, rewriteFfmpegArgsForWasm } from "../audio/directRecorder";
 import { buildRecordingFileName } from "../audio/recorder";
 import { GijiSettings } from "../settings";
 
@@ -413,4 +413,60 @@ test("stop: mix + WASAPI キャプチャ → webm と pc wav の一時ファイ�
   assert.ok(result);
   assert.equal(deleted.filter((p) => p.endsWith(".webm")).length, 1, "webm が削除される");
   assert.equal(deleted.filter((p) => p.endsWith(".wav")).length, 1, "pc wav が削除される");
+});
+
+/* ---------------- Fix Round 1: wasm ffmpeg ホストパスブリッジ（rewriteFfmpegArgsForWasm） ---------------- */
+
+test("rewriteFfmpegArgsForWasm: 1 入力（mic webm → mp3）を仮想パスへ書き換える", () => {
+  const args = [
+    "-y",
+    "-i", "C:/rec/録音_2026.webm",
+    "-codec:a", "libmp3lame",
+    "-b:a", "64k",
+    "-write_xing", "0",
+    "C:/rec/録音_2026.mp3",
+  ];
+  const r = rewriteFfmpegArgsForWasm(args);
+  assert.deepEqual(r.inputs, [
+    { hostPath: "C:/rec/録音_2026.webm", virtualName: "input-0.webm" },
+  ]);
+  assert.equal(r.output.hostPath, "C:/rec/録音_2026.mp3");
+  assert.equal(r.output.virtualName, "output.mp3");
+  assert.deepEqual(r.execArgs, [
+    "-y",
+    "-i", "input-0.webm",
+    "-codec:a", "libmp3lame",
+    "-b:a", "64k",
+    "-write_xing", "0",
+    "output.mp3",
+  ]);
+});
+
+test("rewriteFfmpegArgsForWasm: 2 入力 mix で -filter_complex を維持しつつ仮想パスへ書き換える", () => {
+  const filterComplex =
+    "[0:a]aresample=16000,pan=mono|c0=c0[mic];[1:a]aresample=16000,pan=mono|c0=c0[pc];[mic][pc]amix=inputs=2:duration=longest:dropout_transition=0";
+  const args = [
+    "-y",
+    "-i", "C:/rec/録音_2026.webm",
+    "-i", "C:/pc/giji_pc_123.wav",
+    "-filter_complex", filterComplex,
+    "-ac", "1",
+    "-ar", "16000",
+    "-codec:a", "libmp3lame",
+    "-b:a", "64k",
+    "-write_xing", "0",
+    "C:/rec/録音_2026.mp3",
+  ];
+  const r = rewriteFfmpegArgsForWasm(args);
+  assert.equal(r.inputs.length, 2, "2 入力の順序を維持");
+  assert.equal(r.inputs[0].hostPath, "C:/rec/録音_2026.webm");
+  assert.equal(r.inputs[0].virtualName, "input-0.webm");
+  assert.equal(r.inputs[1].hostPath, "C:/pc/giji_pc_123.wav");
+  assert.equal(r.inputs[1].virtualName, "input-1.wav");
+  assert.equal(r.output.hostPath, "C:/rec/録音_2026.mp3");
+  assert.equal(r.output.virtualName, "output.mp3");
+  const filterIdx = r.execArgs.indexOf("-filter_complex");
+  assert.ok(filterIdx >= 0, "-filter_complex が残る");
+  assert.equal(r.execArgs[filterIdx + 1], filterComplex, "amix フィルタは不変");
+  assert.deepEqual(r.execArgs.slice(0, 5), ["-y", "-i", "input-0.webm", "-i", "input-1.wav"], "入力順序と -i 数が維持される");
 });
