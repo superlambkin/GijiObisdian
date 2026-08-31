@@ -319,6 +319,25 @@ test("start: mix + WASAPI で spawnPcLoopbackCapture に pcLoopbackScriptDir を
   assert.equal(captured!.scriptDir, "C:/bundled");
 });
 
+test("start: pcLoopbackScriptDir 空なら spawnPcLoopbackCapture に manifestDir をフォールバックする（Critical C1）", async () => {
+  let captured: { scriptDir: string } | null = null;
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (_o, _s, scriptDir) => {
+      captured = { scriptDir };
+      return { stop: async () => "C:/pc.wav" };
+    },
+  });
+  const manifestDir = "C:/plugin/.obsidian/plugins/giji-obsidian";
+  const r = new DirectRecorder(deps, undefined, manifestDir);
+  // pcLoopbackScriptDir 未設定（既定 "" / undefined）→ 同梱スクリプトの manifest.dir が渡される
+  await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.ok(captured, "WASAPI キャプチャが起動される");
+  assert.equal(captured!.scriptDir, manifestDir);
+});
+
 test("stop: mix + WASAPI キャプチャ → ffmpeg がミックス引数（2 入力）で呼ばれる", async () => {
   FakeMediaRecorder.instances = [];
   const ffmpegCalls: string[][] = [];

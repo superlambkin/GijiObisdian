@@ -332,7 +332,8 @@ export class DirectRecorder {
             pcCapture = await this.deps.spawnPcLoopbackCapture(
               pcWavPath,
               settings.directSpeakerDeviceId || "",
-              settings.pcLoopbackScriptDir || ""
+              // v0.12 (C1): 空なら同梱既定 manifest.dir へフォールバック（既定インストールで WASAPI が死んでいる不具合対策）
+              settings.pcLoopbackScriptDir || this.manifestDir || ""
             );
           } catch (e) {
             console.warn("[cb-direct] WASAPI loopback spawn failed:", e);
