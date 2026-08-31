@@ -60,6 +60,8 @@ export interface LlmProviderProfile {
 }
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
+/** v0.12.1: 録音ファイルの出力形式（既定 mp3 = 既存挙動と互換） */
+export type RecordingFormat = "mp3" | "wav";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -113,6 +115,8 @@ export interface GijiSettings {
   // ① 録音
   recordingSaveDir: string;
   recordingFileNameTemplate: string;
+  /** v0.12.1: 録音ファイルの出力形式（既定 mp3） */
+  recordingFormat: RecordingFormat;
   audioSource: AudioSourceId;
   appendRecordEnabled: boolean;
   /** PC ダイレクト録音時に getUserMedia に渡すマイク deviceId。空文字ならシステム既定 */
@@ -173,6 +177,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   minutesTemplateFile: "議事録テンプレート.md",
   recordingSaveDir: DEFAULT_RECORDING_SAVE_DIR,
   recordingFileNameTemplate: "録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒",
+  recordingFormat: "mp3",
   audioSource: "mix",
   appendRecordEnabled: true,
   directMicDeviceId: "",
@@ -447,6 +452,21 @@ export class GijiSettingsTab extends PluginSettingTab {
           s.recordingSaveDir = v;
           await this.save();
         })
+      );
+
+    // v0.12.1: 録音ファイルの形式（WAV / MP3）選択
+    new Setting(content)
+      .setName("録音ファイルの形式")
+      .setDesc("MP3（64kbps・推奨）はファイルサイズが小さく Whisper 送信向き。WAV（16kHz・PCM・無圧縮）は劣化なしで保存できます")
+      .addDropdown((d) =>
+        d
+          .addOption("mp3", "MP3（64kbps・推奨）")
+          .addOption("wav", "WAV（16kHz・PCM・無圧縮）")
+          .setValue(s.recordingFormat ?? "mp3")
+          .onChange(async (v: string) => {
+            s.recordingFormat = v as RecordingFormat;
+            await this.save();
+          })
       );
 
     new Setting(content)

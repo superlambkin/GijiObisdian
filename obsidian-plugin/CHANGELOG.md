@@ -2,6 +2,17 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.12.1 (2026-08-31)
+### Added
+- 🆕 **録音ファイルの形式（WAV / MP3）を選択可能に**：設定画面「① 🎙️ 録音」タブに「録音ファイルの形式」ドロップダウンを追加
+- 🎵 **MP3（64kbps・推奨）**：ファイルサイズが小さく、Whisper の文字起こし送信に最適（既存挙動・既定）
+- 🎵 **WAV（16kHz・PCM・無圧縮）**：劣化なしで保存でき、音質重視・後段加工向け。ffmpeg で `-c:a pcm_s16le -ac 1 -ar 16000` を使用
+
+### Implementation
+- `GijiSettings.recordingFormat: "mp3" | "wav"` を追加（既定 `"mp3"`、既存ユーザー設定は後方互換）
+- `DirectRecorder.stop()` が `settings.recordingFormat` に応じて出力パスと ffmpeg エンコーダを分岐（mic / pcLoopback / mix 全ケース対応）
+- 既存テスト 341 件 + 新規 7 件 = 348 件すべて pass
+
 ## v0.12.0 (2026-08-31)
 ### Changed
 - ブリッジ録音（recorder-bridge）を完全削除し、ダイレクト録音のみに統一

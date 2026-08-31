@@ -230,6 +230,39 @@ test("sttMaxConcurrency defaults to 2 and validates range 1-4", () => {
   assert.equal(DEFAULT_SETTINGS.sttMaxConcurrency, 2);
 });
 
+// v0.12.1: 録音ファイル形式（WAV / MP3）の設定とデフォルト
+test("DEFAULT_SETTINGS has recordingFormat = mp3 (default preserves existing behavior)", () => {
+  assert.equal(DEFAULT_SETTINGS.recordingFormat, "mp3");
+});
+
+test("renderRecordingTab has 録音ファイルの形式 dropdown with mp3 / wav options", () => {
+  const plugin = {
+    manifest: { dir: "/mock/plugin" },
+    settings: { ...DEFAULT_SETTINGS },
+    saveSettings: async () => {},
+  };
+  const tab = new GijiSettingsTab({} as any, plugin as any);
+  const contentEl: any = {
+    _setting: undefined,
+    _buttons: [],
+    _dropdowns: [],
+    createEl: () => ({ className: "" }),
+  };
+  tab.renderRecordingTab(contentEl);
+  const dropdowns = contentEl._dropdowns as Array<{ _options: Array<{ value: string; label: string }> }>;
+  // 録音ファイルの形式 用の dropdown が存在する
+  const formatDropdown = dropdowns.find(
+    (d) => d._options.some((o) => o.value === "mp3") && d._options.some((o) => o.value === "wav")
+  );
+  assert.ok(formatDropdown, "録音ファイルの形式 ドロップダウン（mp3 / wav）が無い");
+  // ラベルが要件どおり（MP3（64kbps・推奨）/ WAV（16kHz・PCM・無圧縮））
+  const labels = formatDropdown!._options.map((o) => o.label);
+  assert.ok(labels.some((l) => l.includes("MP3") && l.includes("64kbps")), "MP3 ラベルに 64kbps が含まれる");
+  assert.ok(labels.some((l) => l.includes("WAV") && l.includes("PCM") && l.includes("16kHz")), "WAV ラベルに 16kHz・PCM が含まれる");
+  // 現在の選択は DEFAULT_SETTINGS.recordingFormat に従う
+  assert.equal(formatDropdown!._value, "mp3");
+});
+
 test("sttMaxConcurrency is clamped to valid range", () => {
   const settings = { ...DEFAULT_SETTINGS, sttMaxConcurrency: 0 };
   assert.equal(clampSttConcurrency(settings.sttMaxConcurrency), 1);

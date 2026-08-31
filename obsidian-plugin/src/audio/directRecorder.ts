@@ -4,7 +4,7 @@ import { readFileSync, writeFile as fsWriteFile, unlink as fsUnlink } from "fs";
 import { tmpdir } from "os";
 import { extname, join } from "path";
 import { App } from "obsidian";
-import { GijiSettings } from "../settings";
+import { GijiSettings, RecordingFormat } from "../settings";
 import { buildRecordingFileName } from "./recorder";
 import { ensureFfmpegLoaded } from "./ffmpegConvert";
 import { writeDebugLog } from "../util/debugLog";
@@ -486,11 +486,21 @@ export class DirectRecorder {
       const outDir = (settings.recordingSaveDir || "").trim() || tmpdir();
       const webmPath = join(outDir, `${base}.webm`);
       const mp3Path = join(outDir, `${base}.mp3`);
+      const wavPath = join(outDir, `${base}.wav`);
       const durationSec = (Date.now() - startTime) / 1000;
+
+      // v0.12.1: 録音ファイルの出力形式を選択（既定 mp3 = 既存挙動と互換）
+      const format: RecordingFormat = (settings.recordingFormat ?? "mp3") as RecordingFormat;
+      const outputPath = format === "wav" ? wavPath : mp3Path;
+      /** MP3 エンコーダ用フラグ群（既存挙動） */
+      const mp3EncoderFlags = ["-codec:a", "libmp3lame", "-b:a", "64k", "-write_xing", "0"];
+      /** WAV（PCM 16kHz モノラル）エンコーダ用フラグ群 */
+      const wavEncoderFlags = ["-c:a", "pcm_s16le", "-ac", "1", "-ar", "16000"];
+      const encoderFlags = format === "wav" ? wavEncoderFlags : mp3EncoderFlags;
 
       // 3) 出力生成（mic + PC ミックス / マイクのみ / PC のみ）
       if (webmArrayBuf && pcWavPath) {
-        // マイク(webm) + PC(wav) をミックスして MP3 を生成
+        // マイク(webm) + PC(wav) をミックスして出力（mp3 or wav）を生成
         await this.deps.writeFile(webmPath, webmArrayBuf);
         try {
           await this.deps.ffmpeg([
@@ -499,16 +509,12 @@ export class DirectRecorder {
             "-i", pcWavPath,
             "-filter_complex",
             "[0:a]aresample=16000,pan=mono|c0=c0[mic];[1:a]aresample=16000,pan=mono|c0=c0[pc];[mic][pc]amix=inputs=2:duration=longest:dropout_transition=0",
-            "-ac", "1",
-            "-ar", "16000",
-            "-codec:a", "libmp3lame",
-            "-b:a", "64k",
-            "-write_xing", "0",
-            mp3Path,
+            ...encoderFlags,
+            outputPath,
           ]);
           await this.deps.deleteFile(webmPath);
           await this.deps.deleteFile(pcWavPath).catch(() => {});
-          return { audioPaths: [mp3Path], wavPath: mp3Path, durationSec, startTime: new Date(startTime) };
+          return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
           // 明示的フォールバック：webm と pc wav を両方残す
           return {
@@ -522,19 +528,17 @@ export class DirectRecorder {
       }
 
       if (webmArrayBuf) {
-        // マイクのみ webm → mp3
+        // マイクのみ webm → 出力（mp3 or wav）
         await this.deps.writeFile(webmPath, webmArrayBuf);
         try {
           await this.deps.ffmpeg([
             "-y",
             "-i", webmPath,
-            "-codec:a", "libmp3lame",
-            "-b:a", "64k",
-            "-write_xing", "0",
-            mp3Path,
+            ...encoderFlags,
+            outputPath,
           ]);
           await this.deps.deleteFile(webmPath);
-          return { audioPaths: [mp3Path], wavPath: mp3Path, durationSec, startTime: new Date(startTime) };
+          return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
           // 明示的フォールバック：webm のまま残す（ブリッジの warning 文字列と同一）
           return { audioPaths: [webmPath], wavPath: webmPath, durationSec, startTime: new Date(startTime), warning: "mp3_encode_failed" };
@@ -542,18 +546,16 @@ export class DirectRecorder {
       }
 
       if (pcWavPath) {
-        // PC 音声のみ wav → mp3
+        // PC 音声のみ wav → 出力（mp3 or wav）
         try {
           await this.deps.ffmpeg([
             "-y",
             "-i", pcWavPath,
-            "-codec:a", "libmp3lame",
-            "-b:a", "64k",
-            "-write_xing", "0",
-            mp3Path,
+            ...encoderFlags,
+            outputPath,
           ]);
           await this.deps.deleteFile(pcWavPath).catch(() => {});
-          return { audioPaths: [mp3Path], wavPath: mp3Path, durationSec, startTime: new Date(startTime) };
+          return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
           return { audioPaths: [pcWavPath], wavPath: pcWavPath, durationSec, startTime: new Date(startTime), warning: "mp3_encode_failed" };
         }

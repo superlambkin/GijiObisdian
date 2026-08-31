@@ -461,6 +461,121 @@ test("rewriteFfmpegArgsForWasm: 1 入力（mic webm → mp3）を仮想パスへ
   ]);
 });
 
+/* ---------------- v0.12.1: 録音ファイル形式（WAV / MP3） ---------------- */
+
+test("stop: recordingFormat=wav → 出力は .wav・ffmpeg は PCM 引数・wavPath も同じ .wav を指す", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  const result = await r.stop({ ...settings, recordingFormat: "wav" } as any);
+  assert.ok(result, "stop は null でない");
+  assert.equal(ffmpegCalls.length, 1, "ffmpeg が 1 回呼ばれる");
+  const args = ffmpegCalls[0];
+  assert.ok(
+    args.includes("pcm_s16le") || args.some((a) => a.includes("pcm_s16le")),
+    "ffmpeg 引数に pcm_s16le が含まれる"
+  );
+  assert.ok(args.some((a) => a === "-ac"), "-ac フラグが含まれる");
+  assert.ok(args.some((a) => a === "1"), "-ac 1 が含まれる");
+  assert.ok(args.some((a) => a === "-ar"), "-ar フラグが含まれる");
+  assert.ok(args.some((a) => a === "16000"), "-ar 16000 が含まれる");
+  assert.equal(result!.audioPaths[0].endsWith(".wav"), true, "出力は .wav");
+  assert.equal(result!.wavPath, result!.audioPaths[0], "wavPath は audioPaths[0] と一致");
+});
+
+test("stop: recordingFormat=wav + mix（webm + pcWav）→ ffmpeg 2 入力 + PCM 引数", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "mix", pcLoopbackScriptDir: "C:/bridge" } as any);
+  const result = await r.stop({ ...settings, recordingFormat: "wav" } as any);
+  assert.ok(result, "stop は null でない");
+  assert.equal(ffmpegCalls.length, 1, "ffmpeg が 1 回呼ばれる");
+  const args = ffmpegCalls[0];
+  const inputCount = args.filter((a) => a === "-i").length;
+  assert.equal(inputCount, 2, "webm + pc wav の 2 入力でミックス");
+  assert.ok(args.some((a) => a.includes("pcm_s16le")), "ffmpeg 引数に pcm_s16le が含まれる");
+  assert.ok(args.some((a) => a.includes("amix=inputs=2")), "amix フィルタが使われる");
+  assert.equal(result!.audioPaths[0].endsWith(".wav"), true, "mix の出力は .wav");
+  assert.equal(result!.wavPath, result!.audioPaths[0]);
+});
+
+test("stop: recordingFormat=wav + pcLoopback + WASAPI → ffmpeg 1 入力 + PCM 引数", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "pcLoopback", pcLoopbackScriptDir: "C:/bridge" } as any);
+  const result = await r.stop({ ...settings, recordingFormat: "wav" } as any);
+  assert.ok(result, "stop は null でない");
+  assert.equal(ffmpegCalls.length, 1, "ffmpeg が 1 回呼ばれる");
+  const args = ffmpegCalls[0];
+  const inputCount = args.filter((a) => a === "-i").length;
+  assert.equal(inputCount, 1, "pc wav のみ 1 入力");
+  assert.ok(args.some((a) => a.includes("pcm_s16le")), "ffmpeg 引数に pcm_s16le が含まれる");
+  assert.equal(result!.audioPaths[0].endsWith(".wav"), true, "出力は .wav");
+});
+
+test("stop: recordingFormat 未指定（undefined）→ MP3 既定動作を維持（後方互換）", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  // recordingFormat を意図的に渡さない（既存ユーザー設定の互換性検証）
+  const result = await r.stop({ ...settings, recordingFormat: undefined } as any);
+  assert.ok(result, "stop は null でない");
+  assert.equal(result!.audioPaths[0].endsWith(".mp3"), true, "未指定時は MP3");
+  assert.equal(ffmpegCalls.length, 1);
+  const args = ffmpegCalls[0];
+  assert.ok(args.some((a) => a === "libmp3lame"), "未指定時は libmp3lame を使用");
+});
+
+test("stop: recordingFormat=mp3 明示指定 → MP3 出力（明示的デフォルト）", async () => {
+  FakeMediaRecorder.instances = [];
+  const ffmpegCalls: string[][] = [];
+  const deps = makeDeps({
+    ffmpeg: async (args: string[]) => {
+      ffmpegCalls.push(args);
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  const result = await r.stop({ ...settings, recordingFormat: "mp3" } as any);
+  assert.ok(result, "stop は null でない");
+  assert.equal(result!.audioPaths[0].endsWith(".mp3"), true, "mp3 明示時は MP3");
+  assert.equal(ffmpegCalls.length, 1);
+  const args = ffmpegCalls[0];
+  assert.ok(args.some((a) => a === "libmp3lame"), "mp3 明示時は libmp3lame を使用");
+});
+
 test("rewriteFfmpegArgsForWasm: 2 入力 mix で -filter_complex を維持しつつ仮想パスへ書き換える", () => {
   const filterComplex =
     "[0:a]aresample=16000,pan=mono|c0=c0[mic];[1:a]aresample=16000,pan=mono|c0=c0[pc];[mic][pc]amix=inputs=2:duration=longest:dropout_transition=0";

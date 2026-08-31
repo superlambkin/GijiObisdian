@@ -1,7 +1,7 @@
 {
   "id": "GijiObsidian",
   "name": "GijiObsidian",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "minAppVersion": "1.5.0",
   "description": "Record meeting audio in Obsidian and generate structured meeting minutes via cloud STT/LLM.",
   "author": "MiuMiu",
