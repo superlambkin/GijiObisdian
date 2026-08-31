@@ -184,6 +184,40 @@ test("DEFAULT_SETTINGS は bridge 設定を持たない", () => {
   assert.equal(DEFAULT_SETTINGS.pcLoopbackScriptDir, "");
 });
 
+// v0.12: 設定UI（録音タブ）からブリッジ関連（録音手法・ブリッジURL・ブリッジディレクトリ）を撤去
+// setup.cjs の Setting.addDropdown スタブが contentEl._dropdowns に全 dropdown を蓄積するため、
+// 描画後に録音手法（recordingMethod）用の bridge/direct オプションが無いことを検証できる。
+test("renderRecordingTab に録音手法（recordingMethod）ドロップダウンが無い", () => {
+  const plugin = {
+    manifest: { dir: "/mock/plugin" },
+    settings: { ...DEFAULT_SETTINGS },
+    saveSettings: async () => {},
+  };
+  const tab = new GijiSettingsTab({} as any, plugin as any);
+  const contentEl: any = {
+    _setting: undefined,
+    _buttons: [],
+    _dropdowns: [],
+    createEl: () => ({ className: "" }),
+  };
+  tab.renderRecordingTab(contentEl);
+  const dropdowns = contentEl._dropdowns as Array<{ _options: Array<{ value: string; label: string }> }>;
+  assert.ok(dropdowns.length >= 3, "録音タブにドロップダウンが生成されていない");
+  const allValues = dropdowns.flatMap((d) => d._options.map((o) => o.value));
+  // recordingMethod 用の値（bridge / direct）が存在しない
+  assert.ok(!allValues.includes("bridge"), "録音手法（recordingMethod）用の bridge オプションが残っている");
+  assert.ok(!allValues.includes("direct"), "録音手法（recordingMethod）用の direct オプションが残っている");
+  // 録音モード（audioSource）の 3 択（mix / mic / pcLoopback）は残っている
+  const audioMode = dropdowns.find((d) =>
+    d._options.some((o) => o.value === "mix" || o.value === "pcLoopback")
+  );
+  assert.ok(audioMode, "録音モード（audioSource）ドロップダウンが無い");
+  assert.deepEqual(
+    audioMode!._options.map((o) => o.value).filter((v) => v !== ""),
+    ["mix", "mic", "pcLoopback"]
+  );
+});
+
 test("isLocalSttProvider categorizes providers", () => {
   assert.equal(isLocalSttProvider("whisper-local"), true);
   assert.equal(isLocalSttProvider("mywhisper"), true);

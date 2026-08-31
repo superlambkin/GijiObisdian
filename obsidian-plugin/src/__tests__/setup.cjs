@@ -28,6 +28,9 @@ const obsidianStub = {
     addDropdown(cb) {
       // v0.5: deviceList テスト用に、_options 記録 + selectEl.innerHTML リセット + setValue/onChange/setDisabled を
       // チェーナブルに保つダミー DropdownComponent を渡す。
+      // v0.12: テストから全 dropdown を一覧取得できるよう el（contentEl）に _dropdowns として蓄積する
+      //（addButton の _buttons と同様）。
+      const self = this;
       const dropdown = {
         _options: [],
         _value: "",
@@ -54,6 +57,10 @@ const obsidianStub = {
         },
       };
       cb(dropdown);
+      if (self.el) {
+        if (!self.el._dropdowns) self.el._dropdowns = [];
+        self.el._dropdowns.push(dropdown);
+      }
       return this;
     }
     addText() {
