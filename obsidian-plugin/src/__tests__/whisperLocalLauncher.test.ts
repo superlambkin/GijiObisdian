@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "child_process";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { DEFAULT_SETTINGS } from "../settings";
 
 const base = {
   ...DEFAULT_SETTINGS,
   sttBaseUrl: "http://127.0.0.1:9000/v1",
-  sttServerDir: "D:\\AI-Agent\\GijiObsidian\\whisper-local-server",
+  sttServerDir: "C:/whisper",
   sttWhisperModel: "small" as const,
 };
 
@@ -18,6 +19,39 @@ test("ensureWhisperLocalServer throws clear error when sttBaseUrl is empty", asy
     ),
     /ローカル Whisper サーバ URL が未設定/,
   );
+});
+
+test("ensureWhisperLocalServer throws clear error when sttServerDir is empty", async () => {
+  await assert.rejects(
+    () => ensureWhisperLocalServer(
+      { ...base, sttServerDir: "" },
+      { skipSpawn: true, timeoutMs: 1000 },
+    ),
+    /ローカル Whisper サーバのディレクトリが未設定/,
+  );
+});
+
+test("ensureWhisperLocalServer passes sttWhisperModelDir as WHISPER_DOWNLOAD_ROOT to spawn env", async () => {
+  let capturedEnv: NodeJS.ProcessEnv | undefined;
+  const fakeChild = {
+    on: () => fakeChild,
+    unref: () => {},
+  } as unknown as import("child_process").ChildProcess;
+  const spawnProbe = ((...args: Parameters<typeof spawn>) => {
+    capturedEnv = args[2]?.env as NodeJS.ProcessEnv;
+    return fakeChild;
+  }) as typeof spawn;
+  const fakeFetch = (async () => new Response("not ready", { status: 503 })) as typeof fetch;
+
+  // spawn は probe に差し替えて env を捕捉し、実 spawn はしない（サーバ不在でタイムアウト扱い）
+  await assert.rejects(
+    () => ensureWhisperLocalServer(
+      { ...base, sttWhisperModelDir: "C:/models" },
+      { fetchImpl: fakeFetch, spawnImpl: spawnProbe, timeoutMs: 1000 },
+    ),
+    /Whisper サーバの起動がタイムアウト/,
+  );
+  assert.equal(capturedEnv?.WHISPER_DOWNLOAD_ROOT, "C:/models");
 });
 
 test("ensureWhisperLocalServer skips startup when health check succeeds", async () => {

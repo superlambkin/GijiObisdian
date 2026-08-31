@@ -8,6 +8,8 @@ export interface EnsureOptions {
   fetchImpl?: typeof fetch;
   skipSpawn?: boolean;
   timeoutMs?: number;
+  /** テスト用に spawn を差し替える（既定: child_process.spawn） */
+  spawnImpl?: typeof spawn;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -48,6 +50,13 @@ export async function ensureWhisperLocalServer(
     );
   }
 
+  // sttServerDir 未設定だと join("", "start_whisper_local.bat") で cwd 空の spawn になり黙って失敗するため、先に明確なエラーにする
+  if (!settings.sttServerDir) {
+    throw new Error(
+      "ローカル Whisper サーバのディレクトリが未設定です。設定タブの『ローカル Whisper サーバ』で指定してください（sttServerDir）",
+    );
+  }
+
   // ① 既に起動中ならスキップ
   if (await healthCheck(settings.sttBaseUrl, fetchImpl)) return;
 
@@ -77,7 +86,8 @@ export async function ensureWhisperLocalServer(
       logStream.once("open", () => { logReady = true; resolve(); });
       logStream.once("error", () => resolve());
     });
-    const child = spawn(scriptPath, [], {
+    const spawnFn = opts.spawnImpl ?? spawn;
+    const child = spawnFn(scriptPath, [], {
       cwd: settings.sttServerDir,
       env,
       stdio: ["ignore", logReady ? logStream : "ignore", logReady ? logStream : "ignore"],
