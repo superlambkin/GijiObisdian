@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { bridgeStart } from "../bridge";
 import { buildRecordingFileName, buildSegmentResult, SegmentRecorder } from "../audio/recorder";
 
 // Chromium（Obsidian レンダラー）の ESM ローダーは裸の Node 組み込み指定子
@@ -12,7 +11,6 @@ import { buildRecordingFileName, buildSegmentResult, SegmentRecorder } from "../
 const SRC_FILES = [
   "../audio/recorder.ts",
   "../audio/directRecorder.ts",
-  "../bridge.ts",
   "../commands/importAudio.ts",
   "../commands/recordSegment.ts",
   "../providers/stt.ts",
@@ -49,51 +47,9 @@ test("buildRecordingFileName strips illegal filename chars", () => {
   assert.ok(!/[\\/:*?"<>|]/.test(name), `illegal chars remain: ${name}`);
 });
 
-test("bridgeStart posts outDir/fileName from 録音 settings", async () => {
-  const calls: any[] = [];
-  const fakeFetch = (async (url: any, opts: any) => {
-    calls.push({ url, opts });
-    return { ok: true, json: async () => ({ sessionId: "s1" }) } as any;
-  }) as any;
-  const sid = await bridgeStart("http://bridge", { outDir: "C:/rec", fileName: "録音_test" }, fakeFetch);
-  assert.equal(sid, "s1");
-  const body = JSON.parse(calls[0].opts.body);
-  assert.equal(body.outDir, "C:/rec");
-  assert.equal(body.fileName, "録音_test");
-});
+/* ---------------- 録音手法（ダイレクト固定） ---------------- */
 
-test("bridgeStart: micDeviceId/speakerDeviceId を JSON body に含める", async () => {
-  const calls: any[] = [];
-  const fakeFetch = (async (_url: any, opts: any) => {
-    calls.push(opts);
-    return { ok: true, json: async () => ({ sessionId: "s1" }) } as any;
-  }) as any;
-  await bridgeStart(
-    "http://bridge",
-    { micDeviceId: "m1", speakerDeviceId: "s1", audioSource: "mix" },
-    fakeFetch
-  );
-  const body = JSON.parse(calls[0].body);
-  assert.equal(body.micDeviceId, "m1");
-  assert.equal(body.speakerDeviceId, "s1");
-  assert.equal(body.audioSource, "mix");
-});
-
-test("bridgeStart: micDeviceId 空文字なら body に含めない / undefined 扱い", async () => {
-  const calls: any[] = [];
-  const fakeFetch = (async (_url: any, opts: any) => {
-    calls.push(opts);
-    return { ok: true, json: async () => ({ sessionId: "s1" }) } as any;
-  }) as any;
-  await bridgeStart("http://bridge", {}, fakeFetch);
-  const body = JSON.parse(calls[0].body);
-  // 空文字 → falsy → undefined として JSON 化
-  assert.equal("micDeviceId" in body, false);
-});
-
-/* ---------------- 録音手法（bridge / direct）分岐 ---------------- */
-
-test("recordingMethod=direct なら DirectRecorder に委譲（bridge 非呼出）", async () => {
+test("start: 常に DirectRecorder に委譲（ブリッジ非依存）", async () => {
   // スタブ DirectRecorder：呼び出し回数を記録する
   const stub = {
     startCalls: 0,
@@ -105,10 +61,10 @@ test("recordingMethod=direct なら DirectRecorder に委譲（bridge 非呼出�
     stop: async () => null,
   } as any;
   const recorder = new SegmentRecorder({} as any, "", stub);
-  const settings = { recordingMethod: "direct", bridgeBaseUrl: "http://bridge.invalid", audioSource: "mic" } as any;
+  const settings = { audioSource: "mic" } as any;
   const ok = await recorder.start(settings);
   assert.equal(ok, true);
-  assert.equal(stub.startCalls, 1, "direct では DirectRecorder.start が 1 回呼ばれる");
+  assert.equal(stub.startCalls, 1, "start() は常に DirectRecorder.start を呼ぶ");
 });
 
 test("buildSegmentResult carries audioPaths and startTime", () => {

@@ -1,7 +1,6 @@
 import { App, Notice } from "obsidian";
 import { readFileSync } from "fs";
 import { GijiSettings } from "../settings";
-import { bridgeHealth, bridgeStart, bridgeStop } from "../bridge";
 import { createSttProvider } from "../providers/stt";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { renderTemplate } from "../notes/saver";
@@ -18,7 +17,7 @@ export interface SegmentResult {
   sttMs?: number;
 }
 
-/** bridge / direct 共通の転写対象（BridgeStopResult と DirectRecordResult の共通部分） */
+/** 転写対象（DirectRecordResult と互換の構造） */
 interface TranscribeInput {
   audioPaths: string[];
   wavPath?: string;
@@ -45,14 +44,13 @@ export function buildSegmentResult(
 /**
  * 録音ファイルのベース名をテンプレートから生成する。
  * 既定: `録音_{{year}}年{{month}}月{{day}}日{{hour}}時{{minute}}分{{second}}秒`
- * （拡張子はブリッジ/ダイレクト側で付与: .mp3、変換失敗時 .wav または .webm）
+ * （拡張子はダイレクト側で付与: .mp3、変換失敗時 .wav または .webm）
  */
 export function buildRecordingFileName(now: Date, template: string): string {
   return renderTemplate(now, template).replace(/[\\/:*?"<>|]/g, "-");
 }
 
 export class SegmentRecorder {
-  private sessionId: string | null = null;
   private direct: DirectRecorder;
   private startTime?: Date;
 
@@ -62,48 +60,17 @@ export class SegmentRecorder {
   }
 
   isRecording(): boolean {
-    return this.sessionId !== null || this.direct.isRecording();
+    return this.direct.isRecording();
   }
 
   async start(settings: GijiSettings): Promise<boolean> {
     this.startTime = new Date();
-    // PC ダイレクト録音：ブリッジ確認なし・プラグイン単独で開始
-    if (settings.recordingMethod === "direct") {
-      await writeDebugLog(
-        this.app,
-        this.manifestDir,
-        `[${new Date().toISOString()}] stage=device_select mode=direct mic_id=${(settings.directMicDeviceId || "").trim() || "(default)"} speaker_id=${(settings.directSpeakerDeviceId || "").trim() || "(default)"}`
-      ).catch(() => {});
-      return this.direct.start(settings);
-    }
-    try {
-      const ok = await bridgeHealth(settings.bridgeBaseUrl);
-      if (!ok) {
-        new Notice("⚠️ 録音ブリッジが起動していません。先に recorder-bridge を実行してください");
-        return false;
-      }
-      await writeDebugLog(
-        this.app,
-        this.manifestDir,
-        `[${new Date().toISOString()}] stage=device_select mode=bridge mic_id=${(settings.bridgeMicDeviceId || "").trim() || "(default)"} speaker_id=${(settings.bridgeSpeakerDeviceId || "").trim() || "(default)"}`
-      ).catch(() => {});
-      const outDir = (settings.recordingSaveDir || "").trim() || undefined;
-      const fileName = (settings.recordingFileNameTemplate || "").trim()
-        ? buildRecordingFileName(new Date(), settings.recordingFileNameTemplate)
-        : undefined;
-      this.sessionId = await bridgeStart(settings.bridgeBaseUrl, {
-        outDir,
-        fileName,
-        audioSource: settings.audioSource,
-        micDeviceId: (settings.bridgeMicDeviceId || "").trim() || undefined,
-        speakerDeviceId: (settings.bridgeSpeakerDeviceId || "").trim() || undefined,
-      });
-      return true;
-    } catch (err: any) {
-      this.sessionId = null;
-      new Notice(`⚠️ 録音の開始に失敗しました: ${err?.message ?? err}`);
-      throw err;
-    }
+    await writeDebugLog(
+      this.app,
+      this.manifestDir,
+      `[${new Date().toISOString()}] stage=device_select mode=direct mic_id=${(settings.directMicDeviceId || "").trim() || "(default)"} speaker_id=${(settings.directSpeakerDeviceId || "").trim() || "(default)"}`
+    ).catch(() => {});
+    return this.direct.start(settings);
   }
 
   /** Vault 内は adapter、Vault 外の絶対パスは Node fs で読む */
@@ -118,7 +85,7 @@ export class SegmentRecorder {
     }
   }
 
-  /** bridge / direct 共通の後段：MP3/webm → STT → テキスト化 */
+  /** ダイレクト録音の後段：MP3/webm → STT → テキスト化 */
   private async transcribePaths(result: TranscribeInput, settings: GijiSettings): Promise<SegmentResult> {
     if (result.warning === "mp3_encode_failed") {
       new Notice("⚠️ MP3 変換に失敗したため WAV で保存しました（ffmpeg を確認してください）");
@@ -167,18 +134,7 @@ export class SegmentRecorder {
       if (!result) return null;
       return await this.transcribePaths(result, settings);
     }
-    if (!this.sessionId) {
-      new Notice("進行中の録音がありません");
-      return null;
-    }
-    const sessionId = this.sessionId;
-    this.sessionId = null;
-    try {
-      const result = await bridgeStop(settings.bridgeBaseUrl, sessionId);
-      return await this.transcribePaths(result, settings);
-    } catch (err: any) {
-      new Notice(`${err?.message ?? err}`);
-      throw err;
-    }
+    new Notice("進行中の録音がありません");
+    return null;
   }
 }

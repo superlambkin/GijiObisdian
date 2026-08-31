@@ -1,7 +1,6 @@
 import { Notice, Plugin } from "obsidian";
 import { GijiSettings } from "../settings";
 import { SegmentRecorder } from "../audio/recorder";
-import { isBridgeUp, launchBridge } from "../bridgeLauncher";
 import { isWhisperLocalUp } from "../whisperLocalLauncher";
 import { saveTranscriptToFile } from "../notes/saver";
 import { buildMp3Links } from "../notes/mp3Ref";
@@ -13,10 +12,6 @@ const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
 const TEXTAREA_SELECTOR = ".claudian-textarea";
 const INPUT_CONTAINER_SELECTOR = ".claudian-input-container";
-
-export function shouldShowBridgeButton(recordingMethod: string): boolean {
-  return recordingMethod === "bridge";
-}
 
 /** 選択中 STT プロバイダの文字起こし用モデル名（録音ボタンのツールチップ表示用） */
 export function sttModelLabel(settings: GijiSettings): string {
@@ -125,63 +120,6 @@ function insertTextIntoElement(el: HTMLElement, text: string) {
     }
   }
   el.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function updateBridgeButton(btn: HTMLButtonElement, up: boolean) {
-  if (up) {
-    btn.textContent = "🟢";
-    btn.title = "录音桥运行中";
-  } else {
-    btn.textContent = "🔴";
-    btn.title = "录音桥未启动，点击启动";
-  }
-}
-
-async function refreshBridgeButtons(settings: GijiSettings) {
-  const up = await isBridgeUp(settings);
-  document.querySelectorAll(".giji-bridge-btn").forEach((el) => {
-    const btn = el as HTMLButtonElement;
-    if (btn.disabled) return;
-    updateBridgeButton(btn, up);
-  });
-}
-
-function makeBridgeButton(plugin: Plugin, settings: GijiSettings): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.classList.add("giji-bridge-btn", "claudian-action-btn");
-  btn.setAttribute("aria-label", "录音桥");
-  btn.setAttribute(BTN_MARK, "true");
-  updateBridgeButton(btn, false);
-
-  let busy = false;
-
-  btn.addEventListener("click", async () => {
-    if (busy) return;
-    busy = true;
-    btn.disabled = true;
-    try {
-      if (await isBridgeUp(settings)) {
-        updateBridgeButton(btn, true);
-        new Notice("录音桥已在运行");
-        return;
-      }
-      btn.textContent = "🟡";
-      btn.title = "启动中…";
-      const ok = await launchBridge(settings);
-      if (ok) {
-        updateBridgeButton(btn, true);
-        new Notice("✅ 录音桥已启动");
-      } else {
-        updateBridgeButton(btn, false);
-        new Notice("启动失败，请检查录音桥目录设置或手动启动");
-      }
-    } finally {
-      busy = false;
-      btn.disabled = false;
-    }
-  });
-
-  return btn;
 }
 
 /**
@@ -336,23 +274,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
 }
 
 function injectToolbar(plugin: Plugin, settings: GijiSettings, toolbar: HTMLElement, timer?: RecordingTimer) {
-  const hasBridge = toolbar.querySelector(".giji-bridge-btn");
   const hasRecord = toolbar.querySelector(".giji-record-btn");
-  const showBridge = shouldShowBridgeButton(settings.recordingMethod);
-
-  if (!showBridge) {
-    toolbar.querySelectorAll(".giji-bridge-btn").forEach((el) => el.remove());
-  }
-
-  if (showBridge && !hasBridge) {
-    const bridgeBtn = makeBridgeButton(plugin, settings);
-    if (hasRecord) {
-      toolbar.insertBefore(bridgeBtn, hasRecord);
-    } else {
-      toolbar.appendChild(bridgeBtn);
-    }
-  }
-
   if (!hasRecord) {
     const recordBtn = makeButton(plugin, settings, timer);
     toolbar.appendChild(recordBtn);
@@ -364,7 +286,6 @@ export function setupClaudianButton(
   settings: GijiSettings,
   timer?: RecordingTimer,
 ): { cleanup: () => void; refresh: () => void } {
-  let interval: ReturnType<typeof setInterval> | null = null;
   let sttInterval: ReturnType<typeof setInterval> | null = null;
 
   function scan() {
@@ -374,24 +295,8 @@ export function setupClaudianButton(
     }
   }
 
-  function syncPolling() {
-    if (shouldShowBridgeButton(settings.recordingMethod)) {
-      if (interval) return;
-      refreshBridgeButtons(settings).catch(() => {});
-      interval = setInterval(() => {
-        refreshBridgeButtons(settings).catch((err) => console.warn("[giji] bridge status refresh failed", err));
-      }, 5000);
-    } else {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
-    }
-  }
-
   function refresh() {
     scan();
-    syncPolling();
     // ローカル STT サーバ未起動警告の定期更新（15 秒間隔）
     if (!sttInterval) {
       void refreshSttDownState(settings).catch(() => {});
@@ -427,10 +332,6 @@ export function setupClaudianButton(
   return {
     refresh,
     cleanup: () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
       if (sttInterval) {
         clearInterval(sttInterval);
         sttInterval = null;
