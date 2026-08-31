@@ -1,11 +1,12 @@
 import { Notice } from "obsidian";
-import { execFile as nodeExecFile, spawn as nodeSpawn } from "child_process";
+import { spawn as nodeSpawn } from "child_process";
 import { writeFile as fsWriteFile, unlink as fsUnlink } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { App } from "obsidian";
 import { GijiSettings } from "../settings";
 import { buildRecordingFileName } from "./recorder";
+import { ensureFfmpegLoaded } from "./ffmpegConvert";
 import { writeDebugLog } from "../util/debugLog";
 
 export interface DirectRecordResult {
@@ -36,7 +37,7 @@ export interface DirectRecorderDeps {
   spawnPcLoopbackCapture?: (
     outPath: string,
     speakerDeviceId: string,
-    bridgeDir: string
+    scriptDir: string
   ) => Promise<PcLoopbackCaptureHandle | null>;
 }
 
@@ -71,32 +72,33 @@ const defaultDeleteFile = (path: string): Promise<void> =>
     fsUnlink(path, (err) => (err ? reject(err) : resolve()));
   });
 
-const defaultFfmpeg = (args: string[]): Promise<void> =>
-  new Promise((resolve, reject) => {
-    nodeExecFile("ffmpeg", args, (err) => (err ? reject(err) : resolve()));
-  });
+/** wasm FFmpeg ラッパー: ffmpegConvert のロード済みインスタンスを再利用して exec する */
+const defaultFfmpeg = async (args: string[]): Promise<void> => {
+  const ff = await ensureFfmpegLoaded();
+  await ff.exec(args);
+};
 
 /**
  * v0.11: WASAPI ループバックで PC 音声をキャプチャするサブプロセスを起動する。
  *
- * - `bridgeDir/pc_loopback_capture.py` を venv Python で起動する（無ければ python / py）。
+ * - `scriptDir/pc_loopback_capture.py` を venv Python で起動する（無ければ python / py）。
  * - 終了は `child.stdin.end()`（stdin EOF を検知 → WAV 書き出し → プロセス終了）。
  * - 起動できない場合は null を返し、呼び出し側でマイクのみへフォールバックする。
  */
 const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
-  bridgeDir: string
+  scriptDir: string
 ): Promise<PcLoopbackCaptureHandle | null> => {
-  const scriptPath = bridgeDir ? join(bridgeDir, "pc_loopback_capture.py") : null;
+  const scriptPath = scriptDir ? join(scriptDir, "pc_loopback_capture.py") : null;
   if (!scriptPath) return null;
 
   const args = [scriptPath, outPath];
   // "default" は soundcard のデバイスIDではないため、渡さない（Python 側で既定スピーカー使用）
   if (speakerDeviceId && speakerDeviceId !== "default") args.push(speakerDeviceId);
 
-  const pythonCandidates = bridgeDir
-    ? [join(bridgeDir, "venv", "Scripts", "python.exe"), "python", "py"]
+  const pythonCandidates = scriptDir
+    ? [join(scriptDir, "venv", "Scripts", "python.exe"), "python", "py"]
     : ["python", "py"];
 
   for (const py of pythonCandidates) {
@@ -265,7 +267,7 @@ export class DirectRecorder {
             pcCapture = await this.deps.spawnPcLoopbackCapture(
               pcWavPath,
               settings.directSpeakerDeviceId || "",
-              settings.bridgeDir || ""
+              settings.pcLoopbackScriptDir || ""
             );
           } catch (e) {
             console.warn("[cb-direct] WASAPI loopback spawn failed:", e);

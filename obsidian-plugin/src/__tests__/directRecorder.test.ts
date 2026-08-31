@@ -278,7 +278,7 @@ test("start: mix で getDisplayMedia 音声なし（タブ音声未選択）→ 
 test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAPI キャプチャ開始", async () => {
   FakeMediaRecorder.instances = [];
   let spawnCalled = 0;
-  let capturedSpawn: { outPath: string; speakerId: string; bridgeDir: string } | null = null;
+  let capturedSpawn: { outPath: string; speakerId: string; scriptDir: string } | null = null;
   const deps = makeDeps({
     getUserMedia: async () => {
       return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
@@ -286,21 +286,37 @@ test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAP
     getDisplayMedia: async () => {
       throw new Error("Not supported");
     },
-    spawnPcLoopbackCapture: async (outPath, speakerId, bridgeDir) => {
+    spawnPcLoopbackCapture: async (outPath, speakerId, scriptDir) => {
       spawnCalled++;
-      capturedSpawn = { outPath, speakerId, bridgeDir };
+      capturedSpawn = { outPath, speakerId, scriptDir };
       return { stop: async () => outPath };
     },
   });
   const r = new DirectRecorder(deps);
-  const ok = await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  const ok = await r.start({ ...settings, audioSource: "mix", pcLoopbackScriptDir: "C:/bridge" } as any);
   assert.equal(ok, true);
   assert.equal(spawnCalled, 1, "WASAPI キャプチャが起動される");
-  assert.equal(capturedSpawn!.bridgeDir, "C:/bridge");
+  assert.equal(capturedSpawn!.scriptDir, "C:/bridge");
   assert.equal(capturedSpawn!.speakerId, "");
   assert.equal(FakeMediaRecorder.instances.length, 1, "マイクは MediaRecorder で録音");
   const result = await r.stop(settings);
   assert.ok(result);
+});
+
+test("start: mix + WASAPI で spawnPcLoopbackCapture に pcLoopbackScriptDir を渡す", async () => {
+  let captured: { scriptDir: string } | null = null;
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (_o, _s, scriptDir) => {
+      captured = { scriptDir };
+      return { stop: async () => "C:/pc.wav" };
+    },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start({ ...settings, audioSource: "mix", pcLoopbackScriptDir: "C:/bundled" } as any);
+  assert.equal(captured!.scriptDir, "C:/bundled");
 });
 
 test("stop: mix + WASAPI キャプチャ → ffmpeg がミックス引数（2 入力）で呼ばれる", async () => {
@@ -319,7 +335,7 @@ test("stop: mix + WASAPI キャプチャ → ffmpeg がミックス引数（2 �
     },
   });
   const r = new DirectRecorder(deps);
-  await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  await r.start({ ...settings, audioSource: "mix", pcLoopbackScriptDir: "C:/bridge" } as any);
   const result = await r.stop(settings);
   assert.ok(result, "stop は null でない");
   assert.equal(ffmpegCalls.length, 1, "ffmpeg が 1 回呼ばれる");
@@ -344,7 +360,7 @@ test("start: pcLoopback で getDisplayMedia 失敗 → WASAPI キャプチャの
     spawnPcLoopbackCapture: async (outPath) => ({ stop: async () => outPath }),
   });
   const r = new DirectRecorder(deps);
-  const ok = await r.start({ ...settings, audioSource: "pcLoopback", bridgeDir: "C:/bridge" } as any);
+  const ok = await r.start({ ...settings, audioSource: "pcLoopback", pcLoopbackScriptDir: "C:/bridge" } as any);
   assert.equal(ok, true);
   assert.equal(gumCalled, 0, "pcLoopback では getUserMedia は呼ばれない");
   assert.equal(FakeMediaRecorder.instances.length, 0, "MediaRecorder は使わない");
@@ -367,7 +383,7 @@ test("stop: pcLoopback + WASAPI → pc wav → mp3（ffmpeg 1 入力）", async 
     },
   });
   const r = new DirectRecorder(deps);
-  await r.start({ ...settings, audioSource: "pcLoopback", bridgeDir: "C:/bridge" } as any);
+  await r.start({ ...settings, audioSource: "pcLoopback", pcLoopbackScriptDir: "C:/bridge" } as any);
   const result = await r.stop(settings);
   assert.ok(result);
   assert.equal(ffmpegCalls.length, 1);
@@ -392,7 +408,7 @@ test("stop: mix + WASAPI キャプチャ → webm と pc wav の一時ファイ�
     },
   });
   const r = new DirectRecorder(deps);
-  await r.start({ ...settings, audioSource: "mix", bridgeDir: "C:/bridge" } as any);
+  await r.start({ ...settings, audioSource: "mix", pcLoopbackScriptDir: "C:/bridge" } as any);
   const result = await r.stop(settings);
   assert.ok(result);
   assert.equal(deleted.filter((p) => p.endsWith(".webm")).length, 1, "webm が削除される");

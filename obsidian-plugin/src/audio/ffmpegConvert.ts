@@ -59,6 +59,20 @@ async function loadFFmpegAssetURLs(): Promise<FFmpegAssetURLs> {
   return assetURLs;
 }
 
+/**
+ * FFmpeg インスタンスを取得し、未ロードならアセット Blob URL を設定して load() する。
+ * ロード済みインスタンスは再利用する（directRecorder の wasm ffmpeg ラッパーと
+ * convertToWav16kMono が同一インスタンスを共有し、競合・再初期化しない）。
+ */
+export async function ensureFfmpegLoaded(): Promise<FFmpeg> {
+  const ff = getFfmpeg();
+  if (!ff.loaded) {
+    const { workerURL, coreURL, wasmURL } = await loadFFmpegAssetURLs();
+    await ff.load({ classWorkerURL: workerURL, coreURL, wasmURL });
+  }
+  return ff;
+}
+
 export async function convertToWav16kMono(file: AudioFileLike): Promise<ArrayBuffer> {
   const ff = getFfmpeg();
   const ext = file.name.toLowerCase().split(".").pop() ?? "audio";
