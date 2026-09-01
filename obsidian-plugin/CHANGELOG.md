@@ -2,6 +2,18 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.13.0 (2026-09-01)
+### Fixed
+- 🐛 **エンコード失敗時の Notice を format 対応に**：従来「⚠️ MP3 変換に失敗したため WAV で保存しました」と format に関わらず固定文言だったが、WAV 設定時に MP3 と誤表示／実態は WebM なのに WAV と誤表示の二重問題があった。`recordingFormat` と `audioPaths[0]` の拡張子から動的に「⚠️ {FORMAT} 変換に失敗したため {ACTUAL} のまま保存しました（ffmpeg を確認してください）」を生成
+- 🔑 **warning キーを format 非依存に**：内部の `"mp3_encode_failed"` を `"encode_failed"` に変更（format と無関係な命名に統一）
+
+### Added
+- 🛠 **PC キャプチャ subprocess の診断ロガー（v0.13 真因究明用）**：`spawnPcLoopbackCapture` に `log` パラメータを追加。spawn 試行 / python パス / args / stdout / stderr / spawn error / exit code / stop タイムアウトを `<manifestDir>/logs/giji-YYYY-MM-DD.log` に記録。Electron 環境で Python 側クラッシュ（ImportError / soundcard 失敗等）が観測可能に
+- 🌐 **PYTHONIOENCODING=utf-8 を subprocess env に追加**：Windows Python の stdout GBK/cp936 クラッシュを回避
+
+### Tests
+- 既存テスト 348 件 + 新規 5 件（`buildEncodeFailedNotice` 4 件 + encode_failed キーの format 非依存 2 件、警告キーの重複テスト 1 件を統合）= **353 件すべて pass**
+
 ## v0.12.1 (2026-08-31)
 ### Added
 - 🆕 **録音ファイルの形式（WAV / MP3）を選択可能に**：設定画面「① 🎙️ 録音」タブに「録音ファイルの形式」ドロップダウンを追加

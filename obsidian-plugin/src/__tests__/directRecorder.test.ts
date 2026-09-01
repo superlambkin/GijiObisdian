@@ -132,14 +132,14 @@ test("stop: ファイル名は録音開始時刻（startTime）で生成され�
   assert.equal(name, expected);
 });
 
-test("stop: ffmpeg 失敗 → warning=mp3_encode_failed・webm 残存", async () => {
+test("stop: ffmpeg 失敗 → warning=encode_failed・webm 残存", async () => {
   FakeMediaRecorder.instances = [];
   const deps = makeDeps({ ffmpeg: async () => { throw new Error("no ffmpeg"); } });
   const r = new DirectRecorder(deps);
   await r.start(settings);
   const result = await r.stop(settings);
   assert.ok(result, "stop は null でない");
-  assert.equal(result!.warning, "mp3_encode_failed");
+  assert.equal(result!.warning, "encode_failed");
   assert.equal(result!.audioPaths[0].endsWith(".webm"), true);
 });
 
@@ -278,7 +278,7 @@ test("start: mix で getDisplayMedia 音声なし（タブ音声未選択）→ 
 test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAPI キャプチャ開始", async () => {
   FakeMediaRecorder.instances = [];
   let spawnCalled = 0;
-  let capturedSpawn: { outPath: string; speakerId: string; scriptDir: string } | null = null;
+  let capturedSpawn: { outPath: string; speakerId: string; scriptDir: string; logger?: Function } | null = null;
   const deps = makeDeps({
     getUserMedia: async () => {
       return { getTracks: () => [{ stop() {} }] } as unknown as MediaStream;
@@ -286,9 +286,9 @@ test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAP
     getDisplayMedia: async () => {
       throw new Error("Not supported");
     },
-    spawnPcLoopbackCapture: async (outPath, speakerId, scriptDir) => {
+    spawnPcLoopbackCapture: async (outPath, speakerId, scriptDir, logger) => {
       spawnCalled++;
-      capturedSpawn = { outPath, speakerId, scriptDir };
+      capturedSpawn = { outPath, speakerId, scriptDir, logger };
       return { stop: async () => outPath };
     },
   });
@@ -298,6 +298,7 @@ test("start: mix で getDisplayMedia 失敗 → spawnPcLoopbackCapture で WASAP
   assert.equal(spawnCalled, 1, "WASAPI キャプチャが起動される");
   assert.equal(capturedSpawn!.scriptDir, "C:/bridge");
   assert.equal(capturedSpawn!.speakerId, "");
+  assert.equal(typeof capturedSpawn!.logger, "function", "v0.13: logger コールバックが渡される（stderr/exit code 記録用）");
   assert.equal(FakeMediaRecorder.instances.length, 1, "マイクは MediaRecorder で録音");
   const result = await r.stop(settings);
   assert.ok(result);
@@ -574,6 +575,66 @@ test("stop: recordingFormat=mp3 明示指定 → MP3 出力（明示的デフォ
   assert.equal(ffmpegCalls.length, 1);
   const args = ffmpegCalls[0];
   assert.ok(args.some((a) => a === "libmp3lame"), "mp3 明示時は libmp3lame を使用");
+});
+
+/* ---------------- v0.13: エンコード失敗時の Notice format 対応 ---------------- */
+
+test("stop: ffmpeg 失敗（format=wav）→ warning='encode_failed' + 実体は webm", async () => {
+  FakeMediaRecorder.instances = [];
+  const deps = makeDeps({
+    ffmpeg: async () => { throw new Error("ffmpeg failed"); },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  const result = await r.stop({ ...settings, recordingFormat: "wav" } as any);
+  assert.ok(result);
+  assert.equal(result!.warning, "encode_failed", "warning キーは format 非依存");
+  assert.equal(result!.audioPaths[0].endsWith(".webm"), true, "fallback で webm が残る");
+});
+
+test("stop: ffmpeg 失敗（format=mp3）→ warning='encode_failed'", async () => {
+  FakeMediaRecorder.instances = [];
+  const deps = makeDeps({
+    ffmpeg: async () => { throw new Error("ffmpeg failed"); },
+  });
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  const result = await r.stop({ ...settings, recordingFormat: "mp3" } as any);
+  assert.ok(result);
+  assert.equal(result!.warning, "encode_failed", "MP3 でも同じ警告キー");
+  assert.equal(result!.audioPaths[0].endsWith(".webm"), true, "fallback で webm が残る");
+});
+
+import { buildEncodeFailedNotice } from "../audio/recorder";
+
+test("buildEncodeFailedNotice: format=wav → 'WAV 変換に失敗'（MP3 と誤表示しない）", () => {
+  const notice = buildEncodeFailedNotice(
+    { recordingFormat: "wav" } as any,
+    { warning: "encode_failed", audioPaths: ["/tmp/foo.webm"], durationSec: 1 }
+  );
+  assert.ok(notice);
+  assert.ok(notice!.includes("WAV"), "WAV を含む");
+  assert.ok(!notice!.includes("MP3"), "MP3 を含まない（format 設定と一致）");
+  assert.ok(notice!.includes("WebM"), "実態（WebM）を明記");
+});
+
+test("buildEncodeFailedNotice: format=mp3 → 'MP3 変換に失敗'", () => {
+  const notice = buildEncodeFailedNotice(
+    { recordingFormat: "mp3" } as any,
+    { warning: "encode_failed", audioPaths: ["/tmp/foo.webm"], durationSec: 1 }
+  );
+  assert.ok(notice);
+  assert.ok(notice!.includes("MP3"), "MP3 を含む");
+  assert.ok(!notice!.includes("WebM は") /* 'WebM は保存しました' 等の誤解表現を避ける */);
+  assert.ok(notice!.includes("WebM"), "実態（WebM）を明記");
+});
+
+test("buildEncodeFailedNotice: warning 無し → null", () => {
+  const notice = buildEncodeFailedNotice(
+    { recordingFormat: "wav" } as any,
+    { warning: undefined, audioPaths: ["/tmp/foo.wav"], durationSec: 1 }
+  );
+  assert.equal(notice, null);
 });
 
 test("rewriteFfmpegArgsForWasm: 2 入力 mix で -filter_complex を維持しつつ仮想パスへ書き換える", () => {

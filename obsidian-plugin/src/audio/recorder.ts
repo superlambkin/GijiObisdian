@@ -1,12 +1,12 @@
 import { App, Notice } from "obsidian";
 import { readFileSync } from "fs";
-import { GijiSettings } from "../settings";
+import { GijiSettings, RecordingFormat } from "../settings";
 import { createSttProvider } from "../providers/stt";
 import { ensureWhisperLocalServer } from "../whisperLocalLauncher";
 import { renderTemplate } from "../notes/saver";
 import { writeDebugLog } from "../util/debugLog";
 import { splitForTranscription } from "./chunker";
-import { DirectRecorder } from "./directRecorder";
+import { DirectRecorder, DirectRecordResult } from "./directRecorder";
 
 export interface SegmentResult {
   text: string;
@@ -23,6 +23,29 @@ interface TranscribeInput {
   wavPath?: string;
   durationSec: number;
   warning?: string;
+}
+
+/**
+ * v0.13: エンコード失敗時の Notice メッセージを format に応じて生成する。
+ *
+ * 従来は "MP3 変換に失敗したため WAV で保存しました" と format 問わず固定文言だったが、
+ * ユーザーが WAV を選んでいる時に MP3 と表示される／実態は WebM なのに WAV と表示される
+ * 二重の嘘があったため、format 設定と実ファイル形式を反映する。
+ *
+ * @param settings プラグイン設定（recordingFormat を参照）
+ * @param result 録音 stop の戻り値（audioPaths[0] の拡張子が実態）
+ * @returns 表示文言（warning が encode_failed 以外なら null）
+ */
+export function buildEncodeFailedNotice(
+  settings: GijiSettings,
+  result: { warning?: string; audioPaths: string[] }
+): string | null {
+  if (result.warning !== "encode_failed") return null;
+  const requested = settings.recordingFormat === "wav" ? "WAV" : "MP3";
+  // fallback 経路では WebM（MediaRecorder 由来）が残っているため、その旨を明示する
+  const actualExt = (result.audioPaths[0] ?? "").toLowerCase().split(".").pop() ?? "";
+  const actual = actualExt === "wav" ? "WAV" : actualExt === "mp3" ? "MP3" : "WebM";
+  return `⚠️ ${requested} 変換に失敗したため ${actual} のまま保存しました（ffmpeg を確認してください）`;
 }
 
 /** 転写結果を SegmentResult にまとめる（audioPaths / startTime / sttMs を引き継ぐ） */
@@ -87,9 +110,8 @@ export class SegmentRecorder {
 
   /** ダイレクト録音の後段：MP3/webm → STT → テキスト化 */
   private async transcribePaths(result: TranscribeInput, settings: GijiSettings): Promise<SegmentResult> {
-    if (result.warning === "mp3_encode_failed") {
-      new Notice("⚠️ MP3 変換に失敗したため WAV で保存しました（ffmpeg を確認してください）");
-    }
+    const notice = buildEncodeFailedNotice(settings as GijiSettings, result);
+    if (notice) new Notice(notice);
     new Notice("転写中…");
 
     const paths = result.audioPaths?.length ? result.audioPaths : [result.wavPath!];

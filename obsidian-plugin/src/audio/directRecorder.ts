@@ -22,6 +22,9 @@ export interface PcLoopbackCaptureHandle {
   stop(): Promise<string>;
 }
 
+/** v0.13: PC キャプチャ subprocess の診断ログ出力（既定実装は debug log に書き込み） */
+export type PcLoopbackLogFn = (stage: string, data?: Record<string, unknown>) => Promise<void>;
+
 export interface DirectRecorderDeps {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
   /** v0.8.6: PC 音声（システム音）キャプチャ用。画面共有ダイアログを伴う */
@@ -37,7 +40,9 @@ export interface DirectRecorderDeps {
   spawnPcLoopbackCapture?: (
     outPath: string,
     speakerDeviceId: string,
-    scriptDir: string
+    scriptDir: string,
+    /** v0.13: サブプロセスの stderr/stdout/exit code を記録する診断ロガー */
+    log?: PcLoopbackLogFn
   ) => Promise<PcLoopbackCaptureHandle | null>;
 }
 
@@ -149,11 +154,15 @@ const defaultFfmpeg = async (args: string[]): Promise<void> => {
  * - `scriptDir/pc_loopback_capture.py` を venv Python で起動する（無ければ python / py）。
  * - 終了は `child.stdin.end()`（stdin EOF を検知 → WAV 書き出し → プロセス終了）。
  * - 起動できない場合は null を返し、呼び出し側でマイクのみへフォールバックする。
+ *
+ * v0.13: `log` が渡された場合、spawn / stderr / stdout / exit code / spawn error を記録する
+ * （実機で Python 側クラッシュ原因を観測するため）。省略可。
  */
 const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
-  scriptDir: string
+  scriptDir: string,
+  log: PcLoopbackLogFn = async () => {}
 ): Promise<PcLoopbackCaptureHandle | null> => {
   const scriptPath = scriptDir ? join(scriptDir, "pc_loopback_capture.py") : null;
   if (!scriptPath) return null;
@@ -168,13 +177,35 @@ const defaultSpawnPcLoopbackCapture = async (
 
   for (const py of pythonCandidates) {
     try {
+      // v0.13: 候補ごとに選択状況と起動コマンドを記録（真因究明用）
+      log("spawn_try", { py, args, outPath, scriptDir });
       const child = nodeSpawn(py, args, {
         stdio: ["pipe", "ignore", "pipe"],
         windowsHide: true,
+        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      });
+      // v0.13: stdout/stderr をログに流す（Python 側のクラッシュや ImportError が見える）
+      child.stdout?.on("data", (chunk: Buffer) => {
+        log("stdout", { py, chunk: chunk.toString("utf-8") });
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        log("stderr", { py, chunk: chunk.toString("utf-8") });
+      });
+      child.on("error", (err) => {
+        log("spawn_error", { py, message: err.message, code: (err as any).code });
       });
       await new Promise<void>((resolve, reject) => {
-        child.once("spawn", () => resolve());
-        child.once("error", reject);
+        child.once("spawn", () => {
+          log("spawn_ok", { py, pid: child.pid });
+          resolve();
+        });
+        child.once("error", (err) => {
+          log("spawn_reject", { py, message: err.message });
+          reject(err);
+        });
+      });
+      child.on("exit", (code, signal) => {
+        log("exit", { py, code, signal });
       });
       return {
         stop: () =>
@@ -183,23 +214,30 @@ const defaultSpawnPcLoopbackCapture = async (
             const done = () => {
               if (!settled) {
                 settled = true;
+                log("stop_resolve", { outPath });
                 resolve(outPath);
               }
             };
             child.on("exit", done);
             try {
               child.stdin.end();
-            } catch {
-              /* 既に閉じている場合は無視 */
+              log("stop_stdin_end", { outPath });
+            } catch (e: any) {
+              log("stop_stdin_end_error", { outPath, message: e?.message });
             }
             // 安全のためのタイムアウト（WAV 書き出しに時間がかかる場合に備える）
-            setTimeout(done, 5000).unref?.();
+            setTimeout(() => {
+              log("stop_timeout", { outPath, timeoutMs: 5000 });
+              done();
+            }, 5000).unref?.();
           }),
       };
-    } catch {
+    } catch (e: any) {
       // この Python 候補で起動できない → 次の候補へ
+      log("spawn_try_fail", { py, message: e?.message });
     }
   }
+  log("spawn_all_candidates_failed", { pythonCandidates });
   return null;
 };
 
@@ -333,7 +371,15 @@ export class DirectRecorder {
               pcWavPath,
               settings.directSpeakerDeviceId || "",
               // v0.12 (C1): 空なら同梱既定 manifest.dir へフォールバック（既定インストールで WASAPI が死んでいる不具合対策）
-              settings.pcLoopbackScriptDir || this.manifestDir || ""
+              settings.pcLoopbackScriptDir || this.manifestDir || "",
+              // v0.13: サブプロセスの spawn / stderr / stdout / exit code を debug log に流す
+              async (stage, data) => {
+                await writeDebugLog(
+                  this.app,
+                  this.manifestDir,
+                  `[${new Date().toISOString()}] stage=pc_loopback event=${stage} ${JSON.stringify(data || {})}`
+                ).catch(() => {});
+              }
             );
           } catch (e) {
             console.warn("[cb-direct] WASAPI loopback spawn failed:", e);
@@ -522,7 +568,7 @@ export class DirectRecorder {
             wavPath: webmPath,
             durationSec,
             startTime: new Date(startTime),
-            warning: "mp3_encode_failed",
+            warning: "encode_failed",
           };
         }
       }
@@ -540,8 +586,8 @@ export class DirectRecorder {
           await this.deps.deleteFile(webmPath);
           return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
-          // 明示的フォールバック：webm のまま残す（ブリッジの warning 文字列と同一）
-          return { audioPaths: [webmPath], wavPath: webmPath, durationSec, startTime: new Date(startTime), warning: "mp3_encode_failed" };
+          // 明示的フォールバック：webm のまま残す
+          return { audioPaths: [webmPath], wavPath: webmPath, durationSec, startTime: new Date(startTime), warning: "encode_failed" };
         }
       }
 
@@ -557,7 +603,7 @@ export class DirectRecorder {
           await this.deps.deleteFile(pcWavPath).catch(() => {});
           return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
-          return { audioPaths: [pcWavPath], wavPath: pcWavPath, durationSec, startTime: new Date(startTime), warning: "mp3_encode_failed" };
+          return { audioPaths: [pcWavPath], wavPath: pcWavPath, durationSec, startTime: new Date(startTime), warning: "encode_failed" };
         }
       }
 
