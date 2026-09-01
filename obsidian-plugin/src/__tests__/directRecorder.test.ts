@@ -339,6 +339,72 @@ test("start: pcLoopbackScriptDir 空なら spawnPcLoopbackCapture に manifestDi
   assert.equal(captured!.scriptDir, manifestDir);
 });
 
+/* ---------------- v0.13.1: manifestDir 相対パス → 絶対パス解決（Electron cwd 問題対策） ---------------- */
+
+test("start: manifestDir が相対パスの場合、Vault basePath と結合して絶対パスで spawn する（Electron cwd 対策）", async () => {
+  let captured: { scriptDir: string } | null = null;
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (_o, _s, scriptDir) => {
+      captured = { scriptDir };
+      return { stop: async () => "C:/pc.wav" };
+    },
+  });
+  // Electron 環境再現: manifestDir は相対、app.vault.adapter.basePath で Vault ルートを返す
+  const fakeApp = {
+    vault: { adapter: { basePath: "C:/Users/me/Vault" } },
+  } as any;
+  const manifestDir = ".obsidian/plugins/GijiObsidian"; // 相対
+  const r = new DirectRecorder(deps, fakeApp, manifestDir);
+  await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.ok(captured);
+  // 期待: Vault basePath + 相対パス → 絶対パス
+  // Windows path.join の挙動: バックスラッシュ区切り
+  const expected = "C:\\Users\\me\\Vault\\.obsidian\\plugins\\GijiObsidian";
+  assert.equal(captured!.scriptDir, expected, `scriptDir should be ${expected}, got: ${captured!.scriptDir}`);
+});
+
+test("start: manifestDir が絶対パスの場合、そのまま spawn に渡す（絶対パス優先）", async () => {
+  let captured: { scriptDir: string } | null = null;
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (_o, _s, scriptDir) => {
+      captured = { scriptDir };
+      return { stop: async () => "C:/pc.wav" };
+    },
+  });
+  const fakeApp = {
+    vault: { adapter: { basePath: "C:/Users/me/Vault" } },
+  } as any;
+  const manifestDir = "C:/already/absolute/plugin/dir";
+  const r = new DirectRecorder(deps, fakeApp, manifestDir);
+  await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.equal(captured!.scriptDir, manifestDir, "絶対パスはそのまま渡される（二重結合しない）");
+});
+
+test("start: app.vault.adapter.basePath 不在時、相対パスはそのまま渡す（best-effort）", async () => {
+  let captured: { scriptDir: string } | null = null;
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async (_o, _s, scriptDir) => {
+      captured = { scriptDir };
+      return { stop: async () => "C:/pc.wav" };
+    },
+  });
+  // basePath がないアプリ（モバイル等）
+  const fakeApp = { vault: { adapter: {} } } as any;
+  const manifestDir = ".obsidian/plugins/GijiObsidian";
+  const r = new DirectRecorder(deps, fakeApp, manifestDir);
+  await r.start({ ...settings, audioSource: "mix" } as any);
+  assert.equal(captured!.scriptDir, manifestDir, "basePath 不在なら相対パスのまま渡す");
+});
+
 test("stop: mix + WASAPI キャプチャ → ffmpeg がミックス引数（2 入力）で呼ばれる", async () => {
   FakeMediaRecorder.instances = [];
   const ffmpegCalls: string[][] = [];

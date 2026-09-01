@@ -158,6 +158,32 @@ const defaultFfmpeg = async (args: string[]): Promise<void> => {
  * v0.13: `log` が渡された場合、spawn / stderr / stdout / exit code / spawn error を記録する
  * （実機で Python 側クラッシュ原因を観測するため）。省略可。
  */
+/**
+ * v0.13.1: scriptDir が相対パスの場合、`app.vault.adapter.basePath`（Vault ルート）と
+ * 結合して絶対パス化する。
+ *
+ * 背景: Electron 環境では `Plugin.manifest.dir` は **相対パス**（例: `.obsidian/plugins/GijiObsidian`）
+ * を返し、Node プロセスの cwd は Obsidian バイナリの場所
+ * （`C:\...\Programs\Obsidian\`）になる。相対パスをそのまま使うと存在しないパス
+ * （`C:\...\Programs\Obsidian\.obsidian\plugins\GijiObsidian\...`）を解決しようとして
+ * 「[Errno 2] No such file or directory」で Python が即死する。
+ *
+ * basePath が取得できない環境（モバイル等）ではそのまま返す（best-effort）。
+ * 既に絶対パスの場合は二重結合を防ぐためそのまま返す。
+ */
+export function resolveAbsoluteScriptDir(
+  app: { vault?: { adapter?: { basePath?: string } } } | undefined,
+  scriptDir: string
+): string {
+  if (!scriptDir) return scriptDir;
+  // Windows: ドライブレター始まり / Unix: `/` 始まりなら絶対パス
+  const isAbsolute = /^[a-zA-Z]:[\\/]/.test(scriptDir) || scriptDir.startsWith("/") || scriptDir.startsWith("\\\\");
+  if (isAbsolute) return scriptDir;
+  const basePath = app?.vault?.adapter?.basePath;
+  if (basePath) return join(basePath, scriptDir);
+  return scriptDir;
+}
+
 const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
@@ -367,11 +393,13 @@ export class DirectRecorder {
         if (!pcStream) {
           try {
             const pcWavPath = join(tmpdir(), `giji_pc_${Date.now()}.wav`);
+            // v0.13.1: manifestDir が相対パスの場合は Vault basePath と結合して絶対パス化する
+            const rawScriptDir = settings.pcLoopbackScriptDir || this.manifestDir || "";
+            const scriptDir = resolveAbsoluteScriptDir(this.app, rawScriptDir);
             pcCapture = await this.deps.spawnPcLoopbackCapture(
               pcWavPath,
               settings.directSpeakerDeviceId || "",
-              // v0.12 (C1): 空なら同梱既定 manifest.dir へフォールバック（既定インストールで WASAPI が死んでいる不具合対策）
-              settings.pcLoopbackScriptDir || this.manifestDir || "",
+              scriptDir,
               // v0.13: サブプロセスの spawn / stderr / stdout / exit code を debug log に流す
               async (stage, data) => {
                 await writeDebugLog(

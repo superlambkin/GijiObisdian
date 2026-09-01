@@ -2,6 +2,16 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.13.1 (2026-09-01)
+### Fixed
+- 🐛 **PC WASAPI キャプチャの manifestDir 絶対パス解決（Electron cwd 問題）**：`Plugin.manifest.dir` は Electron 環境では相対パスを返し、Node プロセスの cwd は Obsidian バイナリの場所（`C:\...\Programs\Obsidian\`）になる。`pcLoopbackScriptDir` 未設定時のフォールバックで Python サブプロセスが `[Errno 2] No such file or directory` で即死していた問題を修正
+- 🔧 `resolveAbsoluteScriptDir(app, scriptDir)` を新規追加：`app.vault.adapter.basePath`（Vault ルート）と結合して絶対パス化。既に絶対パスの場合は二重結合せずそのまま。basePath 不在時（モバイル等）は best-effort でそのまま返却
+- 📍 修正は呼び出し側（`DirectRecorder.start`）で実施、`defaultSpawnPcLoopbackCapture` のロジックは変更なし
+
+### Tests
+- 新規 3 件: 相対 → 絶対パス変換 / 絶対パス優先 / basePath 不在時 best-effort
+- 既存 353 件 + 新規 3 件 = **356 件すべて pass**
+
 ## v0.13.0 (2026-09-01)
 ### Fixed
 - 🐛 **エンコード失敗時の Notice を format 対応に**：従来「⚠️ MP3 変換に失敗したため WAV で保存しました」と format に関わらず固定文言だったが、WAV 設定時に MP3 と誤表示／実態は WebM なのに WAV と誤表示の二重問題があった。`recordingFormat` と `audioPaths[0]` の拡張子から動的に「⚠️ {FORMAT} 変換に失敗したため {ACTUAL} のまま保存しました（ffmpeg を確認してください）」を生成
