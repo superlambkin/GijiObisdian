@@ -2,6 +2,17 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.13.2 (2026-09-01)
+### Added
+- 🆕 **設定画面にバージョン情報パネル表示**：H2 見出し直下に `giji-version-info` パネルを追加。plugin バージョン（manifest.json 由来）を常時表示。`buildVersionInfoText()` ヘルパで 'v' プレフィックス付与・二重付与回避・undefined フォールバックを統一処理
+
+### Changed
+- 🔄 **バージョン完全統一**：`recorder-bridge/config.py` の `VERSION = "0.2.0"` → `"0.13.2"`。package.json / manifest.json / config.py / 設定画面表示の 4 箇所を同一バージョンに統一
+
+### Tests
+- 新規 3 件: `buildVersionInfoText`（プレフィックス付与 / undefined フォールバック / 二重付与回避）
+- 既存 356 件 + 新規 3 件 = **359 件すべて pass**
+
 ## v0.13.1 (2026-09-01)
 ### Fixed
 - 🐛 **PC WASAPI キャプチャの manifestDir 絶対パス解決（Electron cwd 問題）**：`Plugin.manifest.dir` は Electron 環境では相対パスを返し、Node プロセスの cwd は Obsidian バイナリの場所（`C:\...\Programs\Obsidian\`）になる。`pcLoopbackScriptDir` 未設定時のフォールバックで Python サブプロセスが `[Errno 2] No such file or directory` で即死していた問題を修正

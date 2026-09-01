@@ -143,6 +143,17 @@ export function clampSttConcurrency(value: number): number {
   return Math.max(1, Math.min(4, Math.floor(value)));
 }
 
+/**
+ * v0.13.2: 設定画面に表示するバージョン文字列を生成する。
+ * - undefined / 空文字は "v0.0.0" にフォールバック
+ * - 既に "v" 始まりの場合はそのまま返す（二重付与しない）
+ * - それ以外は "v" プレフィックスを付与
+ */
+export function buildVersionInfoText(version: string | undefined | null): string {
+  if (!version) return "v0.0.0";
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
 export const DEFAULT_SETTINGS: GijiSettings = {
   sttProvider: "groq",
   sttApiKey: "",
@@ -290,8 +301,16 @@ export class GijiSettingsTab extends PluginSettingTab {
   async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
-    const version = this.plugin.manifest?.version ?? "0.0.0";
-    containerEl.createEl("h2", { text: `GijiObsidian 設定（v${version}）` });
+    const version = buildVersionInfoText(this.plugin.manifest?.version);
+    containerEl.createEl("h2", { text: `GijiObsidian 設定（${version}）` });
+
+    // v0.13.2: バージョン情報パネル（H2 直下・常時表示）
+    const versionInfo = containerEl.createDiv({ cls: "giji-version-info" });
+    versionInfo.style.cssText = "padding: 6px 10px; margin-bottom: 12px; background: var(--background-secondary); border-radius: 6px; font-size: 12px; color: var(--text-muted);";
+    versionInfo.createEl("strong", { text: version });
+    versionInfo.createEl("span", { text: " • recorder-bridge: " });
+    // recorder-bridge の VERSION は同梱 config.py と完全一致（plugin と統一）
+    versionInfo.createEl("span", { text: version });
 
     // タブナビゲーション
     const tabBar = containerEl.createDiv({ cls: "giji-settings-tabs" });

@@ -23,6 +23,23 @@ test("DEFAULT_SETTINGS has required fields", () => {
   assert.ok(DEFAULT_SETTINGS.transcriptFileNameTemplate.startsWith("録音_"));
 });
 
+/* ---------------- v0.13.2: 設定画面にバージョン情報パネル ---------------- */
+
+import { buildVersionInfoText } from "../settings";
+
+test("buildVersionInfoText: 引数のバージョンを 'v' プレフィックス付きで返す", () => {
+  assert.equal(buildVersionInfoText("0.13.1"), "v0.13.1");
+});
+
+test("buildVersionInfoText: undefined/空文字は 'v0.0.0' にフォールバック", () => {
+  assert.equal(buildVersionInfoText(undefined), "v0.0.0");
+  assert.equal(buildVersionInfoText(""), "v0.0.0");
+});
+
+test("buildVersionInfoText: 既に 'v' 始まりの場合は二重付与しない", () => {
+  assert.equal(buildVersionInfoText("v1.2.3"), "v1.2.3");
+});
+
 test("DEFAULT_SETTINGS includes whisper-local fields", () => {
   assert.equal(DEFAULT_SETTINGS.sttBaseUrl, "http://127.0.0.1:9000/v1");
   assert.equal(DEFAULT_SETTINGS.sttServerDir, "");
