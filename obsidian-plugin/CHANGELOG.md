@@ -2,6 +2,21 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.14.0 (2026-09-04)
+
+### Added
+- ⭐ **設定画面に「🔄 更新を確認」ボタン**：バージョン情報パネル（`giji-version-info`）内に追加。GitHub Releases（`superlambkin/GijiObisdian`）の最新版と semver 比較し、更新あれば自動更新まで実行
+- ⭐ **自己更新機能**：更新確認 → バックアップ（`.backup/<UTC-ISO>/` に main.js / manifest.json / styles.css / worker.js / ffmpeg-core.js を退避）→ アセット DL（`requestUrl`・fetch フォールバック）→ プラグイン再読込（disable/enable）。処理中はボタン disabled で二重実行防止。ClaudianBridge v0.32.10 の実装を参考に移植
+- 🏗️ **GitHub Actions リリースワークフロー新設**（`.github/workflows/release.yml`）：タグ `v*` push でテスト → タグ/バージョン一致検証 → ビルド → Release に 5 アセット添付
+
+### Tests
+- 新規 19 件: `src/__tests__/selfUpdate/`（http 1 / updateChecker 6 / backupManager 3 / updateDownloader 3 / selfUpdateFlow 4）+ settings `buildUpdateButton` 2 件
+- 既存 359 件 + 新規 19 件 = **378 件すべて pass**
+
+### Notes
+- 設計書: `docs/superpowers/specs/2026-09-04-self-update-design.md` / 実装計画: `docs/superpowers/plans/2026-09-04-self-update.md`
+- リリース運用: バージョン 4 箇所更新 → タグ push（例: `v0.14.0`）で CI が Release を自動作成
+
 ## v0.13.2 (2026-09-01)
 ### Added
 - 🆕 **設定画面にバージョン情報パネル表示**：H2 見出し直下に `giji-version-info` パネルを追加。plugin バージョン（manifest.json 由来）を常時表示。`buildVersionInfoText()` ヘルパで 'v' プレフィックス付与・二重付与回避・undefined フォールバックを統一処理
