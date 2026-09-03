@@ -219,6 +219,7 @@ import { getModelStatus, checkModelExists, downloadWhisperModel, ModelDlStatus }
 import { ensureWhisperLocalServer } from "./whisperLocalLauncher";
 import { writeDebugLog } from "./util/debugLog";
 import { nodeFetch } from "./providers/nodeFetch";
+import { runSelfUpdate } from "./selfUpdate";
 
 /** 設定画面のタブ ID */
 export type SettingsTabId = "recording" | "transcript" | "summary" | "other";
@@ -241,6 +242,27 @@ function renderStatusText(status: ModelDlStatus): string {
   }
 }
 
+/**
+ * v0.14.0: バージョンパネルに「🔄 更新を確認」ボタンを生成する。
+ * 処理中は disabled にして二重実行を防止する。
+ */
+export function buildUpdateButton(
+  parent: HTMLElement,
+  onClick: () => Promise<void>,
+): HTMLElement {
+  const btn = parent.createEl("button", { text: "🔄 更新を確認" });
+  btn.style.cssText = "margin-left: 10px; font-size: 12px; cursor: pointer;";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      await onClick();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
 export class GijiSettingsTab extends PluginSettingTab {
   /** 現在アクティブな設定タブ */
   activeTab: SettingsTabId = "recording";
@@ -251,6 +273,23 @@ export class GijiSettingsTab extends PluginSettingTab {
 
   private async save(): Promise<void> {
     await this.plugin.saveSettings();
+  }
+
+  /**
+   * v0.14.0: 自己更新を実行する（更新確認 → バックアップ → DL → 再読込）。
+   * pluginDir は Vault basePath から組み立てる（__dirname は信用しない）。
+   */
+  async handleSelfUpdate(): Promise<void> {
+    const pluginId = this.plugin.manifest?.id ?? "GijiObsidian";
+    const basePath = (this.app.vault as { adapter: { basePath: string } }).adapter.basePath;
+    const pluginDir = `${basePath}/.obsidian/plugins/${pluginId}`;
+    await runSelfUpdate(
+      this.app,
+      pluginId,
+      this.plugin.manifest?.version ?? "",
+      pluginDir,
+      this.app.vault.adapter,
+    );
   }
 
   /**
@@ -311,6 +350,9 @@ export class GijiSettingsTab extends PluginSettingTab {
     versionInfo.createEl("span", { text: " • recorder-bridge: " });
     // recorder-bridge の VERSION は同梱 config.py と完全一致（plugin と統一）
     versionInfo.createEl("span", { text: version });
+
+    // v0.14.0: 更新確認ボタン（GitHub Releases の最新版と比較し、自動更新まで実行）
+    buildUpdateButton(versionInfo, () => this.handleSelfUpdate());
 
     // タブナビゲーション
     const tabBar = containerEl.createDiv({ cls: "giji-settings-tabs" });

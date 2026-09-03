@@ -287,3 +287,53 @@ test("sttMaxConcurrency is clamped to valid range", () => {
   assert.equal(clampSttConcurrency(3), 3);
 });
 
+
+/* ---------------- v0.14.0: 更新確認ボタン ---------------- */
+
+import { buildUpdateButton } from "../settings";
+
+test("buildUpdateButton: 更新確認ラベルのボタンを生成する", () => {
+  const created: any[] = [];
+  const parent: any = {
+    createEl(tag: string, opts?: any) {
+      const el: any = {
+        tag,
+        text: opts?.text,
+        style: { cssText: "" },
+        disabled: false,
+        _listeners: [] as Array<() => void>,
+        addEventListener(_ev: string, fn: () => void) { this._listeners.push(fn); },
+      };
+      created.push(el);
+      return el;
+    },
+  };
+  const btn = buildUpdateButton(parent, async () => {});
+  assert.equal(created.length, 1);
+  assert.equal(btn.text, "🔄 更新を確認");
+  assert.equal(btn.tag, "button");
+});
+
+test("buildUpdateButton: 処理中は disabled・完了後に再有効化", async () => {
+  let resolveFn: (() => void) | null = null;
+  const parent: any = {
+    createEl(_tag: string, _opts?: any) {
+      const el: any = {
+        style: { cssText: "" },
+        disabled: false,
+        _listeners: [] as Array<() => void>,
+        addEventListener(_ev: string, fn: () => void) { this._listeners.push(fn); },
+      };
+      return el;
+    },
+  };
+  const btn = buildUpdateButton(parent, async () => {
+    await new Promise<void>((r) => { resolveFn = r; });
+  });
+  assert.equal(btn._listeners.length, 1);
+  const p = btn._listeners[0]();
+  assert.equal(btn.disabled, true, "処理中は disabled");
+  (resolveFn as unknown as () => void)();
+  await p;
+  assert.equal(btn.disabled, false, "完了後に再有効化");
+});
