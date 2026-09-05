@@ -2,6 +2,23 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.15.0 (2026-09-05)
+
+### Added
+- ⭐ **入力レベルメーター**：録音モード「マイク + PC音声（WASAPI ループバック）」で、マイクとスピーカーそれぞれの入力レベルをステータスバーのアニメーションバー（🎤 / 🔊・緑→黄→赤）で確認できる
+  - **録音中**: `DirectRecorder` がマイクを AnalyserNode（100ms polling）、WASAPI キャプチャを stdout レベル行で計測し、メーターへ中継
+  - **録音前チェック**: 設定画面「🎤 入力テスト（レベルメーター）」ボタンで開始/停止。Python `pc_loopback_capture.py` に `--monitor` モード（WAV 書き出しなし・レベル出力のみ）を追加して利用
+  - PC 音声レベルが 3 秒間取得できない場合は 🔊 バーが灰色表示（旧スクリプト残留・起動失敗の検知用）
+  - 録音中は録音を優先し、入力テストは開始できない
+
+### Tests
+- 新規 25 件: Python `test_pc_loopback_capture.py` 7 件 + TS `levelLineParser` 7 件 / `levelMeter` 9 件 / `directRecorder` レベル計測 5 件（既存テスト環境修復のため venv に pytest を導入）
+- 既存 380 件 + 新規 27 件 = **407 件すべて pass**
+
+### Notes
+- 設計書: `docs/superpowers/specs/2026-09-05-input-level-meter-design.md` / 実装計画: `docs/superpowers/plans/2026-09-05-input-level-meter.md`
+- デプロイ時は `pc_loopback_capture.py` も Vault のプラグインフォルダへ配布が必要（`--monitor` 未対応の旧スクリプトが残ると 🔊 バーが灰色になる）
+
 ## v0.14.0 (2026-09-04)
 
 ### Added
