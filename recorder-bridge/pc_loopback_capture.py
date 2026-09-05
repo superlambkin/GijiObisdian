@@ -1,9 +1,13 @@
 """PC 音声（WASAPI ループバック）を単体で WAV ファイルへキャプチャするスクリプト。
 
 直接録音（DirectRecorder）が PC 音声を取得するための補助プロセスとして使う。
-- 引数: <出力WAVパス> [スピーカーデバイスID]
+- 引数: <出力WAVパス> [スピーカーデバイスID] [--monitor]
 - 終了: SIGTERM / SIGINT / stdin が閉じられるまでループバックを録音し、終了時に WAV を書き出す
+- --monitor: WAV を書き出さず、0.1 秒ごとの入力レベルを stdout に JSON 行で出力する
+  （入力テスト用。行形式: {"type": "level", "rms": ..., "peak": ...}）
 """
+import argparse
+import json
 import signal
 import sys
 import threading
@@ -15,8 +19,34 @@ import soundcard as sc
 import config
 
 
-def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event) -> None:
-    """スピーカー（ループバック）を録音して WAV に書き出す。"""
+def compute_level(data: np.ndarray) -> dict:
+    """float 音声フレーム（-1..1 正規化）から RMS と peak を計算する。"""
+    if data.size == 0:
+        return {"rms": 0.0, "peak": 0.0}
+    rms = float(np.sqrt(np.mean(np.square(data))))
+    peak = float(np.max(np.abs(data)))
+    return {"rms": round(rms, 4), "peak": round(peak, 4)}
+
+
+def _emit_level(pcm_float: np.ndarray) -> None:
+    """現在チャンクのレベルを stdout へ 1 行 JSON で出力する（flush 必須）。"""
+    print(json.dumps({"type": "level", **compute_level(pcm_float)}), flush=True)
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="WASAPI ループバック PC 音声キャプチャ")
+    parser.add_argument("out_path", nargs="?", default="pc_loopback.wav")
+    parser.add_argument("speaker_id", nargs="?", default=None)
+    parser.add_argument(
+        "--monitor", action="store_true",
+        help="WAV を書き出さず、入力レベルを stdout に出力し続ける（入力テスト用）",
+    )
+    return parser.parse_args(argv)
+
+
+def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event,
+             monitor: bool = False) -> None:
+    """スピーカー（ループバック）を録音する。monitor 時は WAV を書き出さない。"""
     if speaker_id:
         spk = sc.get_microphone(speaker_id, include_loopback=True)
     else:
@@ -27,8 +57,14 @@ def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event)
     with spk.recorder(samplerate=config.SAMPLE_RATE, channels=config.CHANNELS) as rec:
         while not stop_event.is_set():
             data = rec.record(numframes=1600)
+            if monitor:
+                _emit_level(data)
+                continue
             pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
             frames.append(pcm)
+
+    if monitor:
+        return
 
     audio = (
         np.concatenate(frames, axis=0).astype(np.int16)
@@ -43,8 +79,7 @@ def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event)
 
 
 def main() -> int:
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "pc_loopback.wav"
-    speaker_id = sys.argv[2] if len(sys.argv) > 2 else None
+    args = parse_args(sys.argv[1:])
 
     stop_event = threading.Event()
 
@@ -67,7 +102,7 @@ def main() -> int:
     watcher.start()
 
     try:
-        _capture(out_path, speaker_id, stop_event)
+        _capture(args.out_path, args.speaker_id, stop_event, monitor=args.monitor)
     except Exception as e:  # noqa: BLE001 — プロセス終了コードで異常を伝える
         print(f"PC_LOOPBACK_ERROR: {e}", file=sys.stderr)
         return 1
