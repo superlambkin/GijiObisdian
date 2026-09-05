@@ -1,4 +1,4 @@
-import { Plugin, TFile } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import { join } from "path";
 import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
 import { startSegment, stopSegment, setLevelMeterApi, isSegmentRecording } from "./commands/recordSegment";
@@ -46,6 +46,7 @@ export default class GijiPlugin extends Plugin {
     // v0.15: 録音前入力チェック（設定画面の「🎤 入力テスト」ボタンから使う）
     this.levelMonitor = new LevelMonitor(this.app, this.manifest.dir, this.levelMeter, {
       isRecording: () => isSegmentRecording(),
+      onNotice: (m) => new Notice(m),
     });
     setLevelMeterApi({ meter: this.levelMeter, isRecording: () => isSegmentRecording() });
 

@@ -11,6 +11,7 @@ import {
   defaultSpawnPcLoopbackCapture,
   resolveAbsoluteScriptDir,
 } from "./directRecorder";
+import { ensurePythonDeps } from "./pythonDeps";
 import type { LevelMeter } from "../ui/levelMeter";
 
 export interface LevelMonitorDeps {
@@ -22,6 +23,8 @@ export interface LevelMonitorDeps {
   now?: () => number;
   /** 録音中は true を返す。録音中の入力テスト開始は録音を優先して拒否する */
   isRecording?: () => boolean;
+  /** v0.15.1: パッケージ自動導入の進行通知（呼び出し側が Notice へ変換） */
+  onNotice?: (message: string) => void;
 }
 
 /** PC レベルの無応答判定閾値（ms） */
@@ -110,6 +113,8 @@ export class LevelMonitor {
       this.app,
       settings.pcLoopbackScriptDir || this.manifestDir || ""
     );
+    // v0.15.1: numpy/soundcard が無ければ pylibs へ自動導入（初回のみ・案A）
+    await ensurePythonDeps(scriptDir, { onNotice: (m) => this.deps.onNotice?.(m) });
     this.pcHandle =
       (await this.deps.spawnPcLoopbackCapture?.(
         outPath,

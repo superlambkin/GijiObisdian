@@ -8,6 +8,7 @@ import { GijiSettings, RecordingFormat } from "../settings";
 import { buildRecordingFileName } from "./recorder";
 import { ensureFfmpegLoaded } from "./ffmpegConvert";
 import { writeDebugLog } from "../util/debugLog";
+import { buildLoopbackEnv, ensurePythonDeps } from "./pythonDeps";
 
 export interface DirectRecordResult {
   audioPaths: string[];
@@ -314,7 +315,8 @@ export const defaultSpawnPcLoopbackCapture = async (
         // v0.15: stdout を pipe に変更（レベル JSON 行の受信のため。従来は ignore）
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
-        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+        // v0.15.1: pylibs/（同梱パッケージ）を PYTHONPATH に追加
+        env: buildLoopbackEnv(scriptDir),
       });
       // v0.15: stdout は行パーサへ。レベル行以外のみ診断ログに流す（レベルは 0.1 秒ごとに来るため全文ログはスパムになる）
       const parser = new LevelLineParser(
@@ -585,6 +587,8 @@ export class DirectRecorder {
             // v0.13.1: manifestDir が相対パスの場合は Vault basePath と結合して絶対パス化する
             const rawScriptDir = settings.pcLoopbackScriptDir || this.manifestDir || "";
             const scriptDir = resolveAbsoluteScriptDir(this.app, rawScriptDir);
+            // v0.15.1: numpy/soundcard が無ければ pylibs へ自動導入（初回のみ・案A）
+            await ensurePythonDeps(scriptDir, { onNotice: (m) => new Notice(m) });
             pcCapture = await this.deps.spawnPcLoopbackCapture(
               pcWavPath,
               settings.directSpeakerDeviceId || "",
