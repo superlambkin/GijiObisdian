@@ -430,7 +430,6 @@ export class GijiSettingsTab extends PluginSettingTab {
     let speakerDeviceSetting: Setting;
     let micDeviceDropdown: any;
     let speakerDeviceDropdown: any;
-    let refreshDevicesButton: any;
 
     /**
      * v0.8.4: setValue 安全化。指定 value が option に存在しない場合「（システム既定）」"" にフォールバック。
@@ -482,9 +481,13 @@ export class GijiSettingsTab extends PluginSettingTab {
             await this.save();
           }
         );
-      })
+      });
+
+    // v0.15.1: 更新ボタンは別行にする（ドロップダウンと同列だと幅を取り合い表示が崩れるため）
+    new Setting(content)
+      .setName("")
+      .setDesc("マイクとスピーカーの一覧を再取得します")
       .addButton((b) => {
-        refreshDevicesButton = b;
         b.setButtonText("🔄 デバイス一覧を更新").onClick(async () => {
           b.setDisabled(true).setButtonText("更新中…");
           try {
