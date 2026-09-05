@@ -20,10 +20,69 @@ export interface DirectRecordResult {
 /** v0.11: WASAPI ループバック PC 音声キャプチャのハンドル。stop() で WAV パスを返す */
 export interface PcLoopbackCaptureHandle {
   stop(): Promise<string>;
+  /** v0.15: stdout レベルイベント（JSON 行）の購読。複数回呼ぶと全リスナーに通知 */
+  onLevel(cb: PcLevelListener): void;
 }
 
 /** v0.13: PC キャプチャ subprocess の診断ログ出力（既定実装は debug log に書き込み） */
 export type PcLoopbackLogFn = (stage: string, data?: Record<string, unknown>) => Promise<void>;
+
+/** v0.15: PC 音声（WASAPI）の入力レベル。rms/peak は -1..1 正規化振幅 */
+export type PcLevel = { rms: number; peak: number };
+
+/** v0.15: レベルイベントの購読コールバック */
+export type PcLevelListener = (level: PcLevel) => void;
+
+/**
+ * v0.15: Python stdout の行バッファリング + レベル JSON 行パーサ。
+ * 改行で分割し、`{"type":"level","rms":...,"peak":...}` 形式のみ onLevel へ通知する。
+ * それ以外の行は onOther（診断ログ用）へ渡す。改行がこない壊れた出力に備え、
+ * バッファが 64KB を超えたら先頭を破棄する。
+ */
+export class LevelLineParser {
+  private buffer = "";
+
+  constructor(
+    private onLevel: PcLevelListener,
+    private onOther?: (line: string) => void
+  ) {}
+
+  push(chunk: string): void {
+    this.buffer += chunk;
+    if (this.buffer.length > 65536) {
+      // 1 行が 64KB 超は明らかに異常出力のため全廃棄（末尾だけ残すと次の正規行と結合して壊れる）
+      this.buffer = "";
+    }
+    const lines = this.buffer.split("\n");
+    this.buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      this.handleLine(line);
+    }
+  }
+
+  private handleLine(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const obj = JSON.parse(trimmed) as {
+        type?: string;
+        rms?: unknown;
+        peak?: unknown;
+      };
+      if (
+        obj?.type === "level" &&
+        typeof obj.rms === "number" &&
+        typeof obj.peak === "number"
+      ) {
+        this.onLevel({ rms: obj.rms, peak: obj.peak });
+        return;
+      }
+    } catch {
+      // JSON でない行 → 診断ログへ
+    }
+    this.onOther?.(line);
+  }
+}
 
 export interface DirectRecorderDeps {
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
@@ -42,7 +101,9 @@ export interface DirectRecorderDeps {
     speakerDeviceId: string,
     scriptDir: string,
     /** v0.13: サブプロセスの stderr/stdout/exit code を記録する診断ロガー */
-    log?: PcLoopbackLogFn
+    log?: PcLoopbackLogFn,
+    /** v0.15: true で --monitor モード（WAV 書き出しなし・レベル出力のみ）。入力テスト用 */
+    monitor?: boolean
   ) => Promise<PcLoopbackCaptureHandle | null>;
 }
 
@@ -188,7 +249,8 @@ const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
   scriptDir: string,
-  log: PcLoopbackLogFn = async () => {}
+  log: PcLoopbackLogFn = async () => {},
+  monitor = false
 ): Promise<PcLoopbackCaptureHandle | null> => {
   const scriptPath = scriptDir ? join(scriptDir, "pc_loopback_capture.py") : null;
   if (!scriptPath) return null;
@@ -196,6 +258,9 @@ const defaultSpawnPcLoopbackCapture = async (
   const args = [scriptPath, outPath];
   // "default" は soundcard のデバイスIDではないため、渡さない（Python 側で既定スピーカー使用）
   if (speakerDeviceId && speakerDeviceId !== "default") args.push(speakerDeviceId);
+  if (monitor) args.push("--monitor");
+
+  const levelListeners: PcLevelListener[] = [];
 
   const pythonCandidates = scriptDir
     ? [join(scriptDir, "venv", "Scripts", "python.exe"), "python", "py"]
@@ -204,15 +269,20 @@ const defaultSpawnPcLoopbackCapture = async (
   for (const py of pythonCandidates) {
     try {
       // v0.13: 候補ごとに選択状況と起動コマンドを記録（真因究明用）
-      log("spawn_try", { py, args, outPath, scriptDir });
+      log("spawn_try", { py, args, outPath, scriptDir, monitor });
       const child = nodeSpawn(py, args, {
-        stdio: ["pipe", "ignore", "pipe"],
+        // v0.15: stdout を pipe に変更（レベル JSON 行の受信のため。従来は ignore）
+        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
         env: { ...process.env, PYTHONIOENCODING: "utf-8" },
       });
-      // v0.13: stdout/stderr をログに流す（Python 側のクラッシュや ImportError が見える）
+      // v0.15: stdout は行パーサへ。レベル行以外のみ診断ログに流す（レベルは 0.1 秒ごとに来るため全文ログはスパムになる）
+      const parser = new LevelLineParser(
+        (level) => levelListeners.forEach((cb) => cb(level)),
+        (line) => log("stdout", { py, line })
+      );
       child.stdout?.on("data", (chunk: Buffer) => {
-        log("stdout", { py, chunk: chunk.toString("utf-8") });
+        parser.push(chunk.toString("utf-8"));
       });
       child.stderr?.on("data", (chunk: Buffer) => {
         log("stderr", { py, chunk: chunk.toString("utf-8") });
@@ -234,6 +304,9 @@ const defaultSpawnPcLoopbackCapture = async (
         log("exit", { py, code, signal });
       });
       return {
+        onLevel: (cb: PcLevelListener) => {
+          levelListeners.push(cb);
+        },
         stop: () =>
           new Promise<string>((resolve) => {
             let settled = false;
