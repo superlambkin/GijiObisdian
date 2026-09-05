@@ -43,8 +43,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            main.js
-            manifest.json
-            styles.css
-            worker.js
-            ffmpeg-core.js
+            obsidian-plugin/main.js
+            obsidian-plugin/manifest.json
+            obsidian-plugin/worker.js
+            obsidian-plugin/ffmpeg-core.js
+            obsidian-plugin/ffmpeg-core.wasm
