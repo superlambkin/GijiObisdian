@@ -24,6 +24,15 @@ export function isSegmentRecording(): boolean {
   return recorder?.isRecording() ?? false;
 }
 
+/**
+ * v0.15.1: 録音 UI すべてで共有する Recorder を返す。
+ * Claudian ボタンが個別の SegmentRecorder を作ると、レベルメーターの中継や
+ * isSegmentRecording() のガードが効かなくなるため、必ずこれを使う。
+ */
+export function getSharedRecorder(app: App, manifestDir: string = ""): SegmentRecorder {
+  return getRecorder(app, manifestDir);
+}
+
 function getRecorder(app: App, manifestDir: string = ""): SegmentRecorder {
   if (!recorder) {
     const direct = new DirectRecorder({}, app, manifestDir);

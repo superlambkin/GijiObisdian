@@ -7,6 +7,7 @@ import { buildMp3Links } from "../notes/mp3Ref";
 import { appendToClaudianInput } from "./claudianApi";
 import { runAutoSummarize } from "../commands/autoSummarize";
 import { RecordingTimer, llmModelLabel } from "./recordingTimer";
+import { getSharedRecorder } from "../commands/recordSegment";
 
 const BTN_MARK = "data-giji-btn";
 const TOOLBAR_SELECTOR = ".claudian-input-toolbar";
@@ -180,8 +181,12 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
   btn.setAttribute(BTN_MARK, "true");
   btn.textContent = "🎙️";
 
+  // v0.15.1: レベルメーター（プラグインが onload で生成）。録音開始/停止で表示を同期する
+  const levelMeter = (plugin as any).levelMeter as { show(): void; hide(): void } | undefined;
+
+  // v0.15.1: 共有 Recorder を使う（個別インスタンスだとメーター中継・録音中ガードが効かない）
   const state: ButtonState = {
-    recorder: new SegmentRecorder(plugin.app, plugin.manifest.dir),
+    recorder: getSharedRecorder(plugin.app, plugin.manifest.dir),
   };
 
   let busy = false;
@@ -196,6 +201,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
     try {
       if (state.recorder.isRecording()) {
         timer?.setTranscribing(); // 録音停止 → 文字起こし中
+        levelMeter?.hide(); // v0.15.1: 録音用メーターを隠す
         let text: string | null = null;
         let durationSec: number | undefined;
         let startTime: Date | undefined;
@@ -216,7 +222,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
         }
         btn.textContent = "🎙️";
         btn.classList.remove("giji-recording");
-        state.recorder = new SegmentRecorder(plugin.app, plugin.manifest.dir);
+        state.recorder = getSharedRecorder(plugin.app, plugin.manifest.dir);
         if (!text) {
           timer?.stop(); // 転写が空・録音なし時もタイマーを非表示に戻す
           return;
@@ -259,6 +265,7 @@ function makeButton(plugin: Plugin, settings: GijiSettings, timer?: RecordingTim
             btn.textContent = "■";
             btn.classList.add("giji-recording");
             timer?.start(); // ← ここでタイマー表示
+            levelMeter?.show(); // v0.15.1: 録音用メーター表示
           }
         } catch {
           // Notice already shown by SegmentRecorder.
