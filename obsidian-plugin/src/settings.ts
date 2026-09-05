@@ -203,6 +203,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
 };
 
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { LevelMonitor } from "./audio/levelMonitor";
 import { runSttTest } from "./test/sttTest";
 import { runLlmTest } from "./test/llmTest";
 import { listDevices, DeviceListResult } from "./audio/deviceList";
@@ -503,6 +504,35 @@ export class GijiSettingsTab extends PluginSettingTab {
             await this.save();
           }
         );
+      });
+
+    // v0.15: 録音前入力チェック（ステータスバーにレベルメーターを表示）
+    new Setting(content)
+      .setName("🎤 入力テスト（レベルメーター）")
+      .setDesc("録音を開始する前にマイクと PC 音声の入力レベルを確認します。ステータスバーにメーターが表示されます。もう一度押すと停止します")
+      .addButton((b) => {
+        b.setButtonText("▶ 入力テスト開始").onClick(async () => {
+          const mon = (this.plugin as any).levelMonitor as LevelMonitor | undefined;
+          if (!mon) return;
+          if (mon.isRunning()) {
+            mon.stop();
+            b.setButtonText("▶ 入力テスト開始");
+            return;
+          }
+          b.setDisabled(true);
+          try {
+            const ok = await mon.start(s);
+            if (!ok) {
+              new Notice("⚠️ 録音中は入力テストを開始できません");
+            } else {
+              b.setButtonText("■ 入力テスト停止");
+            }
+          } catch (e: any) {
+            new Notice(`⚠️ マイクにアクセスできません: ${e?.message ?? e}`);
+          } finally {
+            b.setDisabled(false);
+          }
+        });
       });
 
     new Setting(content)

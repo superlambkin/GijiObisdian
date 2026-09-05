@@ -1,13 +1,15 @@
 import { Plugin, TFile } from "obsidian";
 import { join } from "path";
 import { DEFAULT_SETTINGS, GijiSettings, GijiSettingsTab } from "./settings";
-import { startSegment, stopSegment } from "./commands/recordSegment";
+import { startSegment, stopSegment, setLevelMeterApi, isSegmentRecording } from "./commands/recordSegment";
 import { isTranscriptNote, summarizeFromNote } from "./commands/summarizeNote";
 import { importAudioFlow } from "./ui/filePicker";
 import { openRecordingFilePicker } from "./commands/transcribeFile";
 import { setupClaudianButton } from "./ui/claudianButton";
 import { ensureTemplatesDir } from "./notes/minutesTemplate";
 import { RecordingTimer } from "./ui/recordingTimer";
+import { LevelMeter, injectLevelMeterStyles } from "./ui/levelMeter";
+import { LevelMonitor } from "./audio/levelMonitor";
 import { injectRecordingStyles } from "./ui/recordingStyles";
 import { injectSettingsTabStyles } from "./ui/settingsTabsStyles";
 import { LLM_PRESETS } from "./providers/llmPresets";
@@ -20,6 +22,8 @@ export const LLM_PROVIDERS = Object.keys(LLM_PRESETS);
 export default class GijiPlugin extends Plugin {
   settings: GijiSettings = DEFAULT_SETTINGS;
   recordingTimer!: RecordingTimer;
+  levelMeter!: LevelMeter;
+  levelMonitor!: LevelMonitor;
   claudianUi: { cleanup: () => void; refresh: () => void } | null = null;
 
   async onload() {
@@ -34,8 +38,16 @@ export default class GijiPlugin extends Plugin {
 
     injectRecordingStyles();
     injectSettingsTabStyles();
+    injectLevelMeterStyles();
+    // v0.15: ステータスバーは「[レベルメーター][録音タイマー]」の順にする
+    this.levelMeter = new LevelMeter(this.addStatusBarItem());
     this.recordingTimer = new RecordingTimer(this.addStatusBarItem());
     this.register(() => this.recordingTimer.stop());
+    // v0.15: 録音前入力チェック（設定画面の「🎤 入力テスト」ボタンから使う）
+    this.levelMonitor = new LevelMonitor(this.app, this.manifest.dir, this.levelMeter, {
+      isRecording: () => isSegmentRecording(),
+    });
+    setLevelMeterApi({ meter: this.levelMeter, isRecording: () => isSegmentRecording() });
 
     this.addSettingTab(new GijiSettingsTab(this.app, this));
 

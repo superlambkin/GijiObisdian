@@ -1,15 +1,41 @@
 import { App, Notice } from "obsidian";
 import { GijiSettings } from "../settings";
 import { SegmentRecorder, SegmentResult } from "../audio/recorder";
+import { DirectRecorder, PcLevel } from "../audio/directRecorder";
 import { appendSegmentNote } from "../notes/generator";
 import { buildMp3Links } from "../notes/mp3Ref";
 import { runAutoSummarize } from "./autoSummarize";
 import { RecordingTimer, llmModelLabel } from "../ui/recordingTimer";
+import { LevelMeter } from "../ui/levelMeter";
 
 let recorder: SegmentRecorder | null = null;
 
+/** v0.15: ステータスバーメーターと録音状態の照会 API（main.ts から登録する） */
+let levelMeterApi: { meter: LevelMeter; isRecording: () => boolean } | null = null;
+
+export function setLevelMeterApi(
+  api: { meter: LevelMeter; isRecording: () => boolean } | null
+): void {
+  levelMeterApi = api;
+}
+
+/** v0.15: 録音進行中か（LevelMonitor のガードに使う） */
+export function isSegmentRecording(): boolean {
+  return recorder?.isRecording() ?? false;
+}
+
 function getRecorder(app: App, manifestDir: string = ""): SegmentRecorder {
-  if (!recorder) recorder = new SegmentRecorder(app, manifestDir);
+  if (!recorder) {
+    const direct = new DirectRecorder({}, app, manifestDir);
+    // v0.15: 録音中の入力レベルをステータスバーメーターへ中継
+    if (levelMeterApi) {
+      const meter = levelMeterApi.meter;
+      direct.registerLevelListener((source: "mic" | "pc", level: PcLevel) =>
+        meter.setLevel(source, level)
+      );
+    }
+    recorder = new SegmentRecorder(app, manifestDir, direct);
+  }
   return recorder;
 }
 
@@ -18,12 +44,14 @@ export async function startSegment(app: App, settings: GijiSettings, manifestDir
   const started = await r.start(settings);
   if (started) {
     timer?.start();
+    levelMeterApi?.meter.show();
     new Notice("🎙️ 録音中… もう一度「停止して転写」を実行すると終了します");
   }
 }
 
 export async function stopSegment(app: App, settings: GijiSettings, manifestDir: string, timer?: RecordingTimer) {
   timer?.setTranscribing(); // 録音停止 → 文字起こし中
+  levelMeterApi?.meter.hide(); // v0.15: 録音用メーターを隠す
   const r = getRecorder(app, manifestDir);
   let result: SegmentResult | null;
   try {
