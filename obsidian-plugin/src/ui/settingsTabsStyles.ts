@@ -27,6 +27,15 @@ export const SETTINGS_TABS_CSS = `
   border-bottom-color: var(--interactive-accent);
   font-weight: var(--font-semibold);
 }
+/* v0.15.1: 長いデバイス名の select で説明列が潰れないよう、
+   ドロップダウン付き設定行は説明列の最小幅を確保する */
+.setting-item:has(select) .setting-item-info {
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+.setting-item:has(select) .setting-item-control {
+  flex: 1 1 auto;
+}
 `;
 
 export function injectSettingsTabStyles(): void {
