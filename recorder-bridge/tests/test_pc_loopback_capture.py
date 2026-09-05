@@ -95,8 +95,8 @@ def test_capture_monitor_emits_level_and_skips_wav(tmp_path, capsys, monkeypatch
         assert abs(obj["peak"] - 0.25) < 0.001
 
 
-def test_capture_normal_mode_does_not_emit_level(tmp_path, capsys, monkeypatch):
-    """従来モード（monitor=False）ではレベル行を出さない（stdout 契約を壊さない）"""
+def test_capture_normal_mode_also_emits_level(tmp_path, capsys, monkeypatch):
+    """録音モード（monitor=False）でもレベル行を出す（録音中メーター表示のため）"""
     ev = threading.Event()
     monkeypatch.setattr(m.sc, "get_microphone", lambda *a, **k: _FakeSpk(ev))
 
@@ -123,8 +123,11 @@ def test_capture_normal_mode_does_not_emit_level(tmp_path, capsys, monkeypatch):
 
     m._capture(str(tmp_path / "out.wav"), None, ev, monitor=False)
 
-    assert capsys.readouterr().out.strip() == ""
-    assert written["bytes"] > 0
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+    assert len(lines) >= 2  # レベル行が出ている
+    obj = json.loads(lines[0])
+    assert obj["type"] == "level"
+    assert written["bytes"] > 0  # WAV 収集も従来どおり行われる
 
 
 # ---- スピーカー ID 解決のフォールバック ----

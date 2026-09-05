@@ -73,9 +73,8 @@ def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event,
     with spk.recorder(samplerate=config.SAMPLE_RATE, channels=config.CHANNELS) as rec:
         while not stop_event.is_set():
             data = rec.record(numframes=1600)
-            if monitor:
-                _emit_level(data)
-                continue
+            # v0.15.1: 録音モードでもレベルを出す（ステータスバーのメーター表示のため）
+            _emit_level(data)
             pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
             frames.append(pcm)
 

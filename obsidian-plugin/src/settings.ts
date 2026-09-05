@@ -474,6 +474,8 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setDesc("録音に使うマイクデバイスを選択します（初回は「🔄 デバイス一覧を更新」を押してください）")
       .addDropdown((d) => {
         micDeviceDropdown = d;
+        // v0.15.1: デバイス名が長いと select が横に膨らみ、説明列が潰れるため幅を制限
+        if ((d.selectEl as HTMLElement)?.style) (d.selectEl as HTMLElement).style.maxWidth = "420px";
         d.addOption("", "（システム既定）").setValue(s.directMicDeviceId || "").onChange(
           async (v: string) => {
             s.directMicDeviceId = v;
@@ -498,6 +500,8 @@ export class GijiSettingsTab extends PluginSettingTab {
       .setDesc("WASAPI ループバックで PC 音声キャプチャに使われるスピーカーを選択します（pcLoopback / mix 用）")
       .addDropdown((d) => {
         speakerDeviceDropdown = d;
+        // v0.15.1: マイク側と同様に幅を制限（表示崩れ防止）
+        if ((d.selectEl as HTMLElement)?.style) (d.selectEl as HTMLElement).style.maxWidth = "420px";
         d.addOption("", "（システム既定）").setValue(s.directSpeakerDeviceId || "").onChange(
           async (v: string) => {
             s.directSpeakerDeviceId = v;
