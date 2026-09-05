@@ -105,6 +105,25 @@ export interface DirectRecorderDeps {
     /** v0.15: true で --monitor モード（WAV 書き出しなし・レベル出力のみ）。入力テスト用 */
     monitor?: boolean
   ) => Promise<PcLoopbackCaptureHandle | null>;
+  /** v0.15: 録音中の入力レベル通知先（mic/pc）。未指定なら通知しない */
+  onStreamLevel?: (source: "mic" | "pc", level: PcLevel) => void;
+  /** v0.15: レベル polling 用タイマー（テスト DI 用） */
+  setInterval?: typeof setInterval;
+  clearInterval?: typeof clearInterval;
+}
+
+/** v0.15: time domain データから RMS/peak を計算する（無音=0） */
+export function computeRmsLevel(data: Float32Array): PcLevel {
+  if (data.length === 0) return { rms: 0, peak: 0 };
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i];
+    sum += v * v;
+    const abs = Math.abs(v);
+    if (abs > peak) peak = abs;
+  }
+  return { rms: Math.sqrt(sum / data.length), peak };
 }
 
 const defaultGetUserMedia = (constraints: MediaStreamConstraints): Promise<MediaStream> => {
@@ -362,6 +381,9 @@ export class DirectRecorder {
   private audioCtx: AudioContext | null = null;
   /** v0.11: WASAPI ループバック PC 音声キャプチャのハンドル（getDisplayMedia 不可時のフォールバック） */
   private pcCapture: PcLoopbackCaptureHandle | null = null;
+  /** v0.15: 入力レベル計測（AnalyserNode と polling タイマー） */
+  private levelAnalysers: { source: "mic" | "pc"; analyser: AnalyserNode; buf: Float32Array }[] = [];
+  private levelIntervalId: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     deps: DirectRecorderDeps = {},
@@ -381,6 +403,11 @@ export class DirectRecorder {
       deleteFile: defaultDeleteFile,
       ffmpeg: defaultFfmpeg,
       spawnPcLoopbackCapture: defaultSpawnPcLoopbackCapture,
+      onStreamLevel: () => {},
+      setInterval: ((...args: Parameters<typeof setInterval>) =>
+        setInterval(...(args as []))) as typeof setInterval,
+      clearInterval: ((handle: Parameters<typeof clearInterval>[0]) =>
+        clearInterval(handle)) as typeof clearInterval,
       ...deps,
     };
   }
@@ -431,6 +458,72 @@ export class DirectRecorder {
       this.audioCtx = null;
       return null;
     }
+  }
+
+  /** v0.15: ストリームに AnalyserNode を接続する（ベストエフォート） */
+  private attachAnalyser(source: "mic" | "pc", stream: MediaStream, ctx: AudioContext): void {
+    try {
+      const srcNode = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      srcNode.connect(analyser);
+      this.levelAnalysers.push({ source, analyser, buf: new Float32Array(analyser.fftSize) });
+    } catch {
+      // 計測できないだけ。録音には影響させない
+    }
+  }
+
+  /**
+   * v0.15: 録音中の入力レベル計測を開始する。
+   * - mic/pc の renderer 側ストリーム → AnalyserNode + 100ms polling
+   * - WASAPI キャプチャ → handle.onLevel の中継
+   * AudioContext 非対応でも録音は続行する（計測はベストエフォート）。
+   */
+  private setupLevelMonitoring(
+    mic: MediaStream | null,
+    pc: MediaStream | null,
+    pcCapture: PcLoopbackCaptureHandle | null
+  ): void {
+    if (pcCapture) {
+      // 旧ハンドル（v0.14 以前の fake / 実装）は onLevel を持たないため防御的に呼ぶ
+      pcCapture.onLevel?.((level) => this.deps.onStreamLevel("pc", level));
+    }
+    const ctx = this.audioCtx ?? this.createAudioContext();
+    if (!ctx) return;
+    this.audioCtx = ctx;
+    if (mic) this.attachAnalyser("mic", mic, ctx);
+    if (pc) this.attachAnalyser("pc", pc, ctx);
+    if (this.levelAnalysers.length > 0) {
+      this.levelIntervalId = this.deps.setInterval(() => this.pollLevels(), 100);
+    }
+  }
+
+  private pollLevels(): void {
+    for (const entry of this.levelAnalysers) {
+      try {
+        entry.analyser.getFloatTimeDomainData(entry.buf);
+        this.deps.onStreamLevel(entry.source, computeRmsLevel(entry.buf));
+      } catch {
+        // 解放済み等。無視
+      }
+    }
+  }
+
+  private teardownLevelMonitoring(): void {
+    if (this.levelIntervalId !== null) {
+      this.deps.clearInterval(this.levelIntervalId);
+      this.levelIntervalId = null;
+    }
+    this.levelAnalysers = [];
+  }
+
+  /** v0.15: 録音中レベルの追加リスナー登録（deps.onStreamLevel とは独立・複数登録可） */
+  registerLevelListener(cb: (source: "mic" | "pc", level: PcLevel) => void): void {
+    const prev = this.deps.onStreamLevel;
+    this.deps.onStreamLevel = (source, level) => {
+      prev(source, level);
+      cb(source, level);
+    };
   }
 
   async start(settings: GijiSettings): Promise<boolean> {
@@ -528,6 +621,8 @@ export class DirectRecorder {
       this.micStream = micStream;
       this.pcStream = pcStream;
       this.pcCapture = pcCapture;
+      // v0.15: 入力レベル計測（ベストエフォート）
+      this.setupLevelMonitoring(micStream, pcStream, pcCapture);
 
       if (recordStream) {
         if (!this.deps.MediaRecorderCtor) {
@@ -560,6 +655,7 @@ export class DirectRecorder {
       return true;
     } catch (err: any) {
       // 失敗時は取得済みストリームとキャプチャを解放
+      this.teardownLevelMonitoring();
       this.stopTracks(this.micStream);
       this.stopTracks(this.pcStream);
       this.closeAudioContext();
@@ -594,6 +690,7 @@ export class DirectRecorder {
 
     // v0.8.6: 録音終了後、ソースストリーム（マイク / PC 音声）と AudioContext を解放
     const releaseSources = (): void => {
+      this.teardownLevelMonitoring();
       this.stopTracks(this.micStream);
       this.stopTracks(this.pcStream);
       this.closeAudioContext();

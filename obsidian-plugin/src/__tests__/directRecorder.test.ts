@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { basename } from "path";
-import { DirectRecorder, DirectRecorderDeps, rewriteFfmpegArgsForWasm } from "../audio/directRecorder";
+import { DirectRecorder, DirectRecorderDeps, rewriteFfmpegArgsForWasm, computeRmsLevel } from "../audio/directRecorder";
 import { buildRecordingFileName } from "../audio/recorder";
 import { GijiSettings } from "../settings";
 
@@ -62,6 +62,9 @@ function makeDeps(overrides: Partial<DirectRecorderDeps> = {}): Required<DirectR
     deleteFile: async () => {},
     ffmpeg: async () => {},
     spawnPcLoopbackCapture: async () => null,
+    onStreamLevel: () => {},
+    setInterval: ((fn: any, ms?: number) => setInterval(fn, ms)) as any,
+    clearInterval: ((h: any) => clearInterval(h)) as any,
     ...overrides,
   } as Required<DirectRecorderDeps>;
 }
@@ -730,4 +733,117 @@ test("rewriteFfmpegArgsForWasm: 2 入力 mix で -filter_complex を維持しつ
   assert.ok(filterIdx >= 0, "-filter_complex が残る");
   assert.equal(r.execArgs[filterIdx + 1], filterComplex, "amix フィルタは不変");
   assert.deepEqual(r.execArgs.slice(0, 5), ["-y", "-i", "input-0.webm", "-i", "input-1.wav"], "入力順序と -i 数が維持される");
+});
+
+// ---- v0.15: 入力レベル計測 ----
+
+/** AnalyserNode を返す FakeAudioContext（既存 FakeAudioContext を拡張） */
+class FakeAnalyserAudioContext extends FakeAudioContext {
+  static frame: Float32Array | null = null;
+  createMediaStreamSource() {
+    return { connect: () => {} };
+  }
+  createAnalyser() {
+    const self = this;
+    return {
+      fftSize: 1024,
+      getFloatTimeDomainData(buf: Float32Array) {
+        if (FakeAnalyserAudioContext.frame) buf.set(FakeAnalyserAudioContext.frame);
+        else buf.fill(0);
+      },
+      context: self,
+    };
+  }
+}
+
+function makeTimerDeps() {
+  const handlers: Array<() => void> = [];
+  return {
+    deps: {
+      setInterval: (fn: () => void) => {
+        handlers.push(fn);
+        return handlers.length as any;
+      },
+      clearInterval: (h: any) => {
+        handlers.splice(Number(h) - 1, 1);
+      },
+    },
+    fire: () => handlers.forEach((h) => h()),
+    handlerCount: () => handlers.length,
+  };
+}
+
+test("computeRmsLevel: 正弦波相当の配列から rms/peak を計算する", () => {
+  const data = new Float32Array(1024).fill(0.5);
+  const lvl = computeRmsLevel(data);
+  assert.ok(Math.abs(lvl.rms - 0.5) < 0.001);
+  assert.ok(Math.abs(lvl.peak - 0.5) < 0.001);
+});
+
+test("computeRmsLevel: 空配列は rms=0", () => {
+  assert.equal(computeRmsLevel(new Float32Array(0)).rms, 0);
+});
+
+test("start: マイク単独で onStreamLevel('mic') が 100ms polling で呼ばれる", async () => {
+  FakeMediaRecorder.instances = [];
+  FakeAnalyserAudioContext.frame = new Float32Array(1024).fill(0.25);
+  const timer = makeTimerDeps();
+  const got: Array<{ source: string; rms: number }> = [];
+  const deps = makeDeps({
+    AudioContextCtor: FakeAnalyserAudioContext as unknown as typeof AudioContext,
+    onStreamLevel: (source, level) => got.push({ source, rms: level.rms }),
+    ...timer.deps,
+  } as any);
+  const r = new DirectRecorder(deps);
+  assert.equal(await r.start(settings), true);
+  timer.fire();
+  assert.equal(got.length, 1);
+  assert.equal(got[0].source, "mic");
+  assert.ok(Math.abs(got[0].rms - 0.25) < 0.001);
+  await r.stop(settings); // interval が解放される
+  assert.equal(timer.handlerCount(), 0);
+});
+
+test("start: WASAPI キャプチャの onLevel が onStreamLevel('pc') に中継される", async () => {
+  FakeMediaRecorder.instances = [];
+  FakeAnalyserAudioContext.frame = new Float32Array(1024).fill(0);
+  const timer = makeTimerDeps();
+  const registered: Array<(l: any) => void> = [];
+  const got: Array<{ source: string; level: any }> = [];
+  const deps = makeDeps({
+    AudioContextCtor: FakeAnalyserAudioContext as unknown as typeof AudioContext,
+    spawnPcLoopbackCapture: async () => ({
+      onLevel: (cb: any) => registered.push(cb),
+      stop: async () => "C:/pc.wav",
+    }),
+    onStreamLevel: (source, level) => got.push({ source, level }),
+    ...timer.deps,
+  } as any);
+  // audioSource=pcLoopback 単独は MediaRecorder を使わないため mix 設定にする
+  const mixSettings = { ...settings, audioSource: "mix" } as unknown as GijiSettings;
+  const r = new DirectRecorder(deps);
+  assert.equal(await r.start(mixSettings), true);
+  assert.equal(registered.length, 1);
+  // handle からレベル発火 → deps.onStreamLevel が呼ばれることまで検証
+  registered[0]({ rms: 0.4, peak: 0.6 });
+  assert.deepEqual(got, [{ source: "pc", level: { rms: 0.4, peak: 0.6 } }]);
+  await r.stop(settings);
+  assert.equal(timer.handlerCount(), 0);
+});
+
+test("registerLevelListener: 後から登録したリスナーにも通知される", async () => {
+  FakeMediaRecorder.instances = [];
+  FakeAnalyserAudioContext.frame = new Float32Array(1024).fill(0.25);
+  const timer = makeTimerDeps();
+  const got: string[] = [];
+  const deps = makeDeps({
+    AudioContextCtor: FakeAnalyserAudioContext as unknown as typeof AudioContext,
+    ...timer.deps,
+  } as any);
+  const r = new DirectRecorder(deps);
+  r.registerLevelListener((source) => got.push(source));
+  assert.equal(await r.start(settings), true);
+  timer.fire();
+  assert.deepEqual(got, ["mic"]);
+  await r.stop(settings);
 });
