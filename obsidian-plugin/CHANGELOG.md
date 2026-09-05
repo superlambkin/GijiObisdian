@@ -2,6 +2,19 @@
 
 GijiObsidian 插件のすべての重要な変更は、このファイルに記録されます。
 
+## v0.15.2 (2026-09-05)
+
+### Fixed
+- 🐛 **Release ワークフローに「成果物存在検証」ステップ追加**（v0.14.0 から Release アセットが 0 件で公開されていた潜在バグの恒久対策）。`main.js` / `manifest.json` / `worker.js` / `ffmpeg-core.js` / `ffmpeg-core.wasm` の 5 件がビルド後に存在することを CI レベルで検証し、欠落時は exit 1
+- 🛠 **esbuild.config.mjs に deploy プラグイン追加**：ビルド成果物を Vault のプラグインフォルダへ自動配置 + Python 補助スクリプト（`pc_loopback_capture.py` + `config.py`）を **1 セット配布**（v0.11 以来の ModuleNotFoundError 根治）。`GIJI_PLUGIN_DIR` 環境変数で配布先上書き可。`watch` モードではデプロイ無効
+
+### Docs
+- 📚 [[../../../00_Vault管理/方法論/POC開発メタプロセス\|POC 開発メタプロセス v1.1.0]] に 4 セクション追加（§5.5 共有 Singletone / §6.2-A 実機デフォルトの回帰テスト / §7.3-A 外部依存のデプロイ戦略 / §9.4 Obsidian Plugin 落とし穴 4 件）
+- 📚 [[80_POC_Projects/POC_016_GijiObsidian/09_開発ルール\|GijiObsidian 開発ルール v1.0.0]] を新設
+- 📚 [[80_POC_Projects/POC_016_GijiObsidian/03_開発文書/_ログ/2026-09-05_v0.15.1リリース不具合記録\|v0.15.1 リリース不具合記録]] を保存（11 件・再発防止策 8 件）
+
+---
+
 ## v0.15.1 (2026-09-05)
 
 ### Fixed

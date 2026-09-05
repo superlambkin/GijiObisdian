@@ -39,6 +39,22 @@ jobs:
       - name: Build
         run: node esbuild.config.mjs production
 
+      - name: Verify release assets exist (v0.15.2)
+        run: |
+          REQUIRED_FILES=("main.js" "manifest.json" "worker.js" "ffmpeg-core.js" "ffmpeg-core.wasm")
+          MISSING=0
+          for f in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ リリース成果物 $f が見つかりません"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "::error::リリース成果物が $MISSING 件欠落（action-gh-release の files パスを見直してください）"
+            exit 1
+          fi
+          echo "✅ リリース成果物 ${#REQUIRED_FILES[@]} 件すべて存在"
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

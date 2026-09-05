@@ -1,6 +1,6 @@
 {
   "name": "GijiObsidian",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "In-vault meeting recorder + minutes generator (cloud STT/LLM BYOK)",
   "main": "main.js",
   "scripts": {

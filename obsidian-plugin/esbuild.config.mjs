@@ -1,13 +1,58 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
+const pluginRoot = resolve(root, ".."); // obsidian-plugin/ → GijiObsidian/
 const coreDir = resolve(root, "node_modules/@ffmpeg/core/dist/esm");
 const ffmpegDir = resolve(root, "node_modules/@ffmpeg/ffmpeg/dist/esm");
+
+/**
+ * v0.15.2: Python 補助スクリプト（と依存モジュール）をプラグインフォルダへ 1 セットで配布する。
+ * v0.15.1 までは pc_loopback_capture.py 単独しか配布しておらず、config.py が欠落して
+ * v0.11 以来 PC 音声キャプチャが ModuleNotFoundError で起動直後に死んでいた（不具合 #1）。
+ */
+const recorderBridgeFiles = [
+  "pc_loopback_capture.py",
+  "config.py",
+];
+
+const deployToPlugin = {
+  name: "deploy-to-vault-plugin-folder",
+  setup(build) {
+    build.onEnd(async (result) => {
+      if (result.errors.length > 0) return;
+      // 環境変数 GIJI_PLUGIN_DIR で配布先を上書き可能（CI / 別 PC 用）。
+      // 未設定なら Obsidian Vault 内の GijiObsidian プラグインフォルダへコピー。
+      const target =
+        process.env.GIJI_PLUGIN_DIR ??
+        resolve(process.env.USERPROFILE ?? process.env.HOME ?? "", "OneDrive/Edge/Obsidian Vault/.obsidian/plugins/GijiObsidian");
+
+      await mkdir(target, { recursive: true });
+      // 1) ビルドで生成された成果物
+      await Promise.all([
+        copyFile(resolve(root, "main.js"), resolve(target, "main.js")),
+        copyFile(resolve(root, "manifest.json"), resolve(target, "manifest.json")),
+        copyFile(resolve(root, "ffmpeg-core.js"), resolve(target, "ffmpeg-core.js")),
+        copyFile(resolve(root, "ffmpeg-core.wasm"), resolve(target, "ffmpeg-core.wasm")),
+      ]);
+      // 2) Python 補助スクリプトと依存モジュール（v0.15.2 教訓：1 セット配布）
+      await Promise.all(
+        recorderBridgeFiles.map((f) =>
+          copyFile(resolve(pluginRoot, "recorder-bridge", f), resolve(target, f))
+        )
+      );
+      // 3) マーカー検証（デプロイ漏れを CI レベルで即検知）
+      for (const f of ["main.js", "manifest.json", "ffmpeg-core.js", "ffmpeg-core.wasm", ...recorderBridgeFiles]) {
+        await access(resolve(target, f));
+      }
+      console.log(`[deploy] ✅ → ${target}`);
+    });
+  },
+};
 const ffmpegAssets = {
   name: "ffmpeg-assets",
   setup(build) {
@@ -68,7 +113,8 @@ const context = await esbuild.context({
   sourcemap: "inline",
   treeShaking: true,
   outfile: "main.js",
-  plugins: [ffmpegAssets],
+  // v0.15.2: watch 時はデプロイを無効化（開発時の常時コピーを避ける）
+  plugins: [ffmpegAssets, ...(watch ? [] : [deployToPlugin])],
 });
 
 if (watch) {
