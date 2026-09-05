@@ -761,36 +761,42 @@ export class DirectRecorder {
       const durationSec = (Date.now() - startTime) / 1000;
 
       // v0.12.1: 録音ファイルの出力形式を選択（既定 mp3 = 既存挙動と互換）
+      // v0.15.1: webm を追加。マイクのみの場合は MediaRecorder の webm を変換なしで保存
       const format: RecordingFormat = (settings.recordingFormat ?? "mp3") as RecordingFormat;
-      const outputPath = format === "wav" ? wavPath : mp3Path;
+      const isWebm = format === "webm";
+      const outputPath = format === "wav" ? wavPath : isWebm ? webmPath : mp3Path;
+      // webm 出力時は入力（マイク raw）と出力が同一パスになるため一時名を分離する
+      const micRawPath = isWebm ? join(outDir, `${base}.mic.webm`) : webmPath;
       /** MP3 エンコーダ用フラグ群（既存挙動） */
       const mp3EncoderFlags = ["-codec:a", "libmp3lame", "-b:a", "64k", "-write_xing", "0"];
       /** WAV（PCM 16kHz モノラル）エンコーダ用フラグ群 */
       const wavEncoderFlags = ["-c:a", "pcm_s16le", "-ac", "1", "-ar", "16000"];
-      const encoderFlags = format === "wav" ? wavEncoderFlags : mp3EncoderFlags;
+      /** WebM（Opus 64kbps）エンコーダ用フラグ群 */
+      const webmEncoderFlags = ["-c:a", "libopus", "-b:a", "64k"];
+      const encoderFlags = format === "wav" ? wavEncoderFlags : isWebm ? webmEncoderFlags : mp3EncoderFlags;
 
       // 3) 出力生成（mic + PC ミックス / マイクのみ / PC のみ）
       if (webmArrayBuf && pcWavPath) {
-        // マイク(webm) + PC(wav) をミックスして出力（mp3 or wav）を生成
-        await this.deps.writeFile(webmPath, webmArrayBuf);
+        // マイク(webm) + PC(wav) をミックスして出力（mp3 or wav or webm）を生成
+        await this.deps.writeFile(micRawPath, webmArrayBuf);
         try {
           await this.deps.ffmpeg([
             "-y",
-            "-i", webmPath,
+            "-i", micRawPath,
             "-i", pcWavPath,
             "-filter_complex",
             "[0:a]aresample=16000,pan=mono|c0=c0[mic];[1:a]aresample=16000,pan=mono|c0=c0[pc];[mic][pc]amix=inputs=2:duration=longest:dropout_transition=0",
             ...encoderFlags,
             outputPath,
           ]);
-          await this.deps.deleteFile(webmPath);
+          await this.deps.deleteFile(micRawPath);
           await this.deps.deleteFile(pcWavPath).catch(() => {});
           return { audioPaths: [outputPath], wavPath: outputPath, durationSec, startTime: new Date(startTime) };
         } catch {
           // 明示的フォールバック：webm と pc wav を両方残す
           return {
-            audioPaths: [webmPath, pcWavPath],
-            wavPath: webmPath,
+            audioPaths: [micRawPath, pcWavPath],
+            wavPath: micRawPath,
             durationSec,
             startTime: new Date(startTime),
             warning: "encode_failed",
@@ -799,6 +805,11 @@ export class DirectRecorder {
       }
 
       if (webmArrayBuf) {
+        // マイクのみ：webm 選択時は MediaRecorder 出力をそのまま保存（変換なし・高速）
+        if (isWebm) {
+          await this.deps.writeFile(micRawPath, webmArrayBuf);
+          return { audioPaths: [micRawPath], wavPath: micRawPath, durationSec, startTime: new Date(startTime) };
+        }
         // マイクのみ webm → 出力（mp3 or wav）
         await this.deps.writeFile(webmPath, webmArrayBuf);
         try {

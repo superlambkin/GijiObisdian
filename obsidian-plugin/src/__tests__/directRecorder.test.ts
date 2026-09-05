@@ -847,3 +847,50 @@ test("registerLevelListener: 後から登録したリスナーにも通知され
   assert.deepEqual(got, ["mic"]);
   await r.stop(settings);
 });
+
+// ---- v0.15.1: webm フォーマット ----
+
+test("stop: format=webm でマイクのみ → ffmpeg を介さず webm を直接保存", async () => {
+  FakeMediaRecorder.instances = [];
+  let ffmpegCalled = false;
+  const written: string[] = [];
+  const deps = makeDeps({
+    ffmpeg: async () => { ffmpegCalled = true; },
+    writeFile: async (p: string) => { written.push(p); },
+  } as any);
+  const r = new DirectRecorder(deps);
+  await r.start(settings);
+  const result = await r.stop({ ...settings, recordingFormat: "webm" } as unknown as GijiSettings);
+  assert.ok(result);
+  assert.equal(basename(result!.audioPaths[0]).endsWith(".webm"), true);
+  assert.equal(ffmpegCalled, false, "webm は変換不要");
+  assert.equal(written.length, 1);
+});
+
+test("stop: format=webm で mic+PC → libopus で webm 出力（一時ファイル名も分離）", async () => {
+  FakeMediaRecorder.instances = [];
+  const argsLog: string[][] = [];
+  const written: string[] = [];
+  const deps = makeDeps({
+    getDisplayMedia: async () => {
+      throw new Error("Not supported");
+    },
+    spawnPcLoopbackCapture: async () => ({
+      onLevel: () => {},
+      stop: async () => "C:/pc.wav",
+    }),
+    ffmpeg: async (args: string[]) => { argsLog.push(args); },
+    writeFile: async (p: string) => { written.push(p); },
+  } as any);
+  const mixSettings = { ...settings, audioSource: "mix" } as unknown as GijiSettings;
+  const r = new DirectRecorder(deps);
+  await r.start(mixSettings);
+  const result = await r.stop({ ...settings, audioSource: "mix", recordingFormat: "webm" } as unknown as GijiSettings);
+  assert.ok(result);
+  assert.equal(basename(result!.audioPaths[0]).endsWith(".webm"), true);
+  assert.equal(argsLog.length, 1, "ffmpeg で mix する");
+  const args = argsLog[0];
+  assert.ok(args.includes("libopus"), "webm は libopus エンコード");
+  assert.equal(written.length, 1);
+  assert.ok(basename(written[0]).endsWith(".mic.webm"), "出力と同じ .webm を避けるため一時名を分離");
+});

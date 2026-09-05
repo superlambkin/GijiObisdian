@@ -60,8 +60,8 @@ export interface LlmProviderProfile {
 }
 export type MinutesTemplateSource = "vault" | "directory";
 export type AudioSourceId = "mic" | "pcLoopback" | "mix";
-/** v0.12.1: 録音ファイルの出力形式（既定 mp3 = 既存挙動と互換） */
-export type RecordingFormat = "mp3" | "wav";
+/** v0.12.1: 録音ファイルの出力形式（既定 mp3 = 既存挙動と互換）。v0.15.1 で webm を追加 */
+export type RecordingFormat = "mp3" | "wav" | "webm";
 
 export interface GijiSettings {
   // ② 文字起こし
@@ -564,11 +564,12 @@ export class GijiSettingsTab extends PluginSettingTab {
     // v0.12.1: 録音ファイルの形式（WAV / MP3）選択
     new Setting(content)
       .setName("録音ファイルの形式")
-      .setDesc("MP3（64kbps・推奨）はファイルサイズが小さく Whisper 送信向き。WAV（16kHz・PCM・無圧縮）は劣化なしで保存できます")
+      .setDesc("MP3（64kbps・推奨）はファイルサイズが小さく Whisper 送信向き。WAV（16kHz・PCM・無圧縮）は劣化なしで保存できます。WebM（Opus 64kbps）はマイクのみ録音時に変換なしで保存できます")
       .addDropdown((d) =>
         d
           .addOption("mp3", "MP3（64kbps・推奨）")
           .addOption("wav", "WAV（16kHz・PCM・無圧縮）")
+          .addOption("webm", "WebM（Opus 64kbps・変換なし）")
           .setValue(s.recordingFormat ?? "mp3")
           .onChange(async (v: string) => {
             s.recordingFormat = v as RecordingFormat;
