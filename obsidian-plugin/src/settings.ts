@@ -123,6 +123,8 @@ export interface GijiSettings {
   directMicDeviceId: string;
   /** PC ダイレクト録音時のスピーカー指定（getUserMedia は出力デバイスを受け取らないため現状は保存のみ） */
   directSpeakerDeviceId: string;
+  /** v0.15.1: スピーカーの表示名（Chromium ID は soundcard と合わないため Python 側の解決ヒントに使う） */
+  directSpeakerDeviceName: string;
   /** WASAPI ループバック同梱スクリプトのディレクトリ（空文字なら同梱既定 manifest.dir） */
   pcLoopbackScriptDir: string;
   // ② 文字起こし（保存・挿入）
@@ -193,6 +195,7 @@ export const DEFAULT_SETTINGS: GijiSettings = {
   appendRecordEnabled: true,
   directMicDeviceId: "",
   directSpeakerDeviceId: "",
+  directSpeakerDeviceName: "",
   pcLoopbackScriptDir: "",
   autoSaveTranscript: true,
   transcriptSaveDir: "議事録",
@@ -457,6 +460,9 @@ export class GijiSettingsTab extends PluginSettingTab {
       for (const sp of got.speakers) speakerDeviceDropdown.addOption(sp.id, sp.name || sp.id);
       const currentSpkId = s.directSpeakerDeviceId;
       safeSetValue(speakerDeviceDropdown, currentSpkId || "");
+      // v0.15.1: 表示名も併せて更新（Python 側の解決ヒント）
+      const spkSel = speakerDeviceDropdown.selectEl as HTMLSelectElement | undefined;
+      s.directSpeakerDeviceName = spkSel?.selectedOptions?.[0]?.textContent ?? "";
       // desc 更新
       const micDesc =
         got.source === "direct"
@@ -508,6 +514,9 @@ export class GijiSettingsTab extends PluginSettingTab {
         d.addOption("", "（システム既定）").setValue(s.directSpeakerDeviceId || "").onChange(
           async (v: string) => {
             s.directSpeakerDeviceId = v;
+            // v0.15.1: Python 側の解決ヒントとして表示名も保存する
+            const sel = d.selectEl as HTMLSelectElement | undefined;
+            s.directSpeakerDeviceName = sel?.selectedOptions?.[0]?.textContent ?? "";
             await this.save();
           }
         );

@@ -103,7 +103,9 @@ export interface DirectRecorderDeps {
     /** v0.13: サブプロセスの stderr/stdout/exit code を記録する診断ロガー */
     log?: PcLoopbackLogFn,
     /** v0.15: true で --monitor モード（WAV 書き出しなし・レベル出力のみ）。入力テスト用 */
-    monitor?: boolean
+    monitor?: boolean,
+    /** v0.15.1: スピーカー表示名（ID が解決できない場合の Python 側解決ヒント） */
+    speakerName?: string
   ) => Promise<PcLoopbackCaptureHandle | null>;
   /** v0.15: 録音中の入力レベル通知先（mic/pc）。未指定なら通知しない */
   onStreamLevel?: (source: "mic" | "pc", level: PcLevel) => void;
@@ -265,20 +267,38 @@ export function resolveAbsoluteScriptDir(
   return scriptDir;
 }
 
+/**
+ * v0.15.1: WASAPI キャプチャの Python 引数を組み立てる。
+ * 解決順は Python 側（ID → 名前 → 既定）。speakerDeviceId は Chromium ハッシュの
+ * 可能性があるため、speakerName をヒントに渡す。
+ */
+export function buildLoopbackArgs(
+  scriptPath: string,
+  outPath: string,
+  speakerDeviceId: string,
+  monitor: boolean,
+  speakerName?: string
+): string[] {
+  const args = [scriptPath, outPath];
+  // "default" は soundcard のデバイスIDではないため、渡さない（Python 側で既定スピーカー使用）
+  if (speakerDeviceId && speakerDeviceId !== "default") args.push(speakerDeviceId);
+  if (monitor) args.push("--monitor");
+  if (speakerName && speakerName.trim()) args.push("--name", speakerName.trim());
+  return args;
+}
+
 export const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
   scriptDir: string,
   log: PcLoopbackLogFn = async () => {},
-  monitor = false
+  monitor = false,
+  speakerName?: string
 ): Promise<PcLoopbackCaptureHandle | null> => {
   const scriptPath = scriptDir ? join(scriptDir, "pc_loopback_capture.py") : null;
   if (!scriptPath) return null;
 
-  const args = [scriptPath, outPath];
-  // "default" は soundcard のデバイスIDではないため、渡さない（Python 側で既定スピーカー使用）
-  if (speakerDeviceId && speakerDeviceId !== "default") args.push(speakerDeviceId);
-  if (monitor) args.push("--monitor");
+  const args = buildLoopbackArgs(scriptPath, outPath, speakerDeviceId, monitor, speakerName);
 
   const levelListeners: PcLevelListener[] = [];
 
@@ -576,7 +596,11 @@ export class DirectRecorder {
                   this.manifestDir,
                   `[${new Date().toISOString()}] stage=pc_loopback event=${stage} ${JSON.stringify(data || {})}`
                 ).catch(() => {});
-              }
+              },
+              // v0.15: 入力テストでは --monitor モード（レベル出力のみ）
+              false,
+              // v0.15.1: ID が解決できない場合の解決ヒント（表示名）
+              settings.directSpeakerDeviceName || undefined
             );
           } catch (e) {
             console.warn("[cb-direct] WASAPI loopback spawn failed:", e);

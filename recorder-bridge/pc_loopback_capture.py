@@ -41,32 +41,52 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--monitor", action="store_true",
         help="WAV を書き出さず、入力レベルを stdout に出力し続ける（入力テスト用）",
     )
+    parser.add_argument(
+        "--name", default=None,
+        help="スピーカーの表示名（ID が解決できない場合の解決ヒント）",
+    )
     return parser.parse_args(argv)
 
 
-def _resolve_speaker(speaker_id: str | None):
+def _resolve_speaker(speaker_id: str | None, speaker_name: str | None = None):
     """スピーカー（ループバック）デバイスを解決する。
 
-    設定画面で選んだ ID は Chromium 形式のハッシュの可能性があり、soundcard は
-    Windows の MMDevice ID しか解決できない。解決できない ID が渡された場合は
-    既定スピーカーへフォールバックし、stderr に警告を出す（v0.15.1）。
+    解決順: ID → 名前（「Default - 」前置き剥がしも試行）→ 既定スピーカー。
+    設定画面で選んだ ID は Chromium 形式のハッシュで soundcard（Windows MMDevice ID）
+    に一致しないため、名前での解決に対応している（v0.15.1）。
+    すべて失敗した場合は既定スピーカーへフォールバックし stderr に警告を出す。
     """
+    candidates: list[str] = []
     if speaker_id:
+        candidates.append(speaker_id)
+    if speaker_name:
+        candidates.append(speaker_name)
+        # Chromium は既定デバイスに「Default - 」前置きを付けるため剥がして再試行
+        for prefix in ("Default - ", "Communications - "):
+            if speaker_name.startswith(prefix):
+                candidates.append(speaker_name[len(prefix):])
+                break
+
+    for candidate in candidates:
         try:
-            return sc.get_microphone(speaker_id, include_loopback=True)
-        except Exception as e:  # noqa: BLE001 — 解決できない ID は既定へフォールバック
-            print(
-                f"PC_LOOPBACK_WARN: speaker id not found, fallback to default ({e})",
-                file=sys.stderr,
-                flush=True,
-            )
+            return sc.get_microphone(candidate, include_loopback=True)
+        except Exception:  # noqa: BLE001 — 次の候補へ
+            continue
+
+    if candidates:
+        print(
+            f"PC_LOOPBACK_WARN: speaker candidates not found, fallback to default "
+            f"({', '.join(repr(c) for c in candidates)})",
+            file=sys.stderr,
+            flush=True,
+        )
     return sc.get_microphone(sc.default_speaker().id, include_loopback=True)
 
 
 def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event,
-             monitor: bool = False) -> None:
+             monitor: bool = False, speaker_name: str | None = None) -> None:
     """スピーカー（ループバック）を録音する。monitor 時は WAV を書き出さない。"""
-    spk = _resolve_speaker(speaker_id)
+    spk = _resolve_speaker(speaker_id, speaker_name)
 
     frames: list[np.ndarray] = []
     # 0.1 秒 / チャンク（16kHz）
@@ -117,7 +137,8 @@ def main() -> int:
     watcher.start()
 
     try:
-        _capture(args.out_path, args.speaker_id, stop_event, monitor=args.monitor)
+        _capture(args.out_path, args.speaker_id, stop_event, monitor=args.monitor,
+                 speaker_name=args.name)
     except Exception as e:  # noqa: BLE001 — プロセス終了コードで異常を伝える
         print(f"PC_LOOPBACK_ERROR: {e}", file=sys.stderr)
         return 1

@@ -116,7 +116,8 @@ export class LevelMonitor {
         settings.directSpeakerDeviceId || "",
         scriptDir,
         undefined,
-        true
+        true,
+        settings.directSpeakerDeviceName || undefined
       )) ?? null;
     this.lastPcLevelAt = this.deps.now();
     this.pcHandle?.onLevel((level: PcLevel) => {

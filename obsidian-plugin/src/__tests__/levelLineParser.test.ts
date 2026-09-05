@@ -66,3 +66,20 @@ test("異常膨張ガード: 改行のない巨大チャンクでバッファ先
   p.push('{"type":"level","rms":0.1,"peak":0.1}\n');
   assert.deepEqual(got, [{ rms: 0.1, peak: 0.1 }]);
 });
+
+import { buildLoopbackArgs } from "../audio/directRecorder";
+
+test("buildLoopbackArgs: ID + monitor + name を正しい順で組み立てる", () => {
+  const args = buildLoopbackArgs("C:/p/script.py", "C:/t/out.wav", "dev123", true, "スピーカー (SMSL M400)");
+  assert.deepEqual(args, ["C:/p/script.py", "C:/t/out.wav", "dev123", "--monitor", "--name", "スピーカー (SMSL M400)"]);
+});
+
+test("buildLoopbackArgs: 従来形（ID のみ・monitor なし）は互換", () => {
+  const args = buildLoopbackArgs("C:/p/script.py", "C:/t/out.wav", "", false, "");
+  assert.deepEqual(args, ["C:/p/script.py", "C:/t/out.wav"]);
+});
+
+test("buildLoopbackArgs: default は ID として渡さない", () => {
+  const args = buildLoopbackArgs("C:/p/script.py", "C:/t/out.wav", "default", false, "");
+  assert.deepEqual(args, ["C:/p/script.py", "C:/t/out.wav"]);
+});

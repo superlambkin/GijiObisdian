@@ -181,3 +181,70 @@ def test_resolve_speaker_none_uses_default(monkeypatch):
     monkeypatch.setattr(m.sc, "default_speaker", lambda: _FakeDev())
     dev = m._resolve_speaker(None)
     assert dev.id == "default-dev"
+
+
+# ---- スピーカー名による解決（Chromium ID は Windows ID と一致しないため） ----
+
+def test_resolve_speaker_uses_name_when_id_unresolvable(capsys, monkeypatch):
+    """ID が解決せず名前が渡された場合、名前で解決する"""
+    calls = []
+
+    class _FakeDev:
+        def __init__(self, id):
+            self.id = id
+
+    def _fake_get(id_or_name, include_loopback=False):
+        calls.append(id_or_name)
+        if id_or_name == "スピーカー (SMSL M400)":
+            return _FakeDev("by-name")
+        raise ValueError(f"no device with id {id_or_name}")
+
+    monkeypatch.setattr(m.sc, "get_microphone", _fake_get)
+
+    dev = m._resolve_speaker("04fd46ab-hash", "スピーカー (SMSL M400)")
+    assert dev.id == "by-name"
+    assert calls == ["04fd46ab-hash", "スピーカー (SMSL M400)"]  # ID → 名前の順で試す
+
+
+def test_resolve_speaker_strips_default_prefix_in_name(capsys, monkeypatch):
+    """「Default - 」前置き付きの名前は剥がして解決を試す"""
+    calls = []
+
+    class _FakeDev:
+        def __init__(self, id):
+            self.id = id
+
+    def _fake_get(id_or_name, include_loopback=False):
+        calls.append(id_or_name)
+        if id_or_name == "スピーカー (SMSL M400)":
+            return _FakeDev("by-clean-name")
+        raise ValueError(f"no device with id {id_or_name}")
+
+    monkeypatch.setattr(m.sc, "get_microphone", _fake_get)
+
+    dev = m._resolve_speaker(None, "Default - スピーカー (SMSL M400)")
+    assert dev.id == "by-clean-name"
+    assert calls == ["Default - スピーカー (SMSL M400)", "スピーカー (SMSL M400)"]
+
+
+def test_resolve_speaker_name_fails_falls_back_to_default(capsys, monkeypatch):
+    """ID も名前も解決できない場合は既定スピーカーへフォールバック"""
+    calls = []
+
+    class _FakeDev:
+        def __init__(self, id):
+            self.id = id
+
+    def _fake_get(id_or_name, include_loopback=False):
+        calls.append(id_or_name)
+        if id_or_name == "default-dev":
+            return _FakeDev("default-dev")
+        raise ValueError(f"no device with id {id_or_name}")
+
+    monkeypatch.setattr(m.sc, "get_microphone", _fake_get)
+    monkeypatch.setattr(m.sc, "default_speaker", lambda: _FakeDev("default-dev"))
+
+    dev = m._resolve_speaker("hash", "unknown-device")
+    assert dev.id == "default-dev"
+    assert calls[-1] == "default-dev"
+    assert "PC_LOOPBACK_WARN" in capsys.readouterr().err
