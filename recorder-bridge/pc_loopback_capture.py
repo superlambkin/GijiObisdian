@@ -44,13 +44,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _resolve_speaker(speaker_id: str | None):
+    """スピーカー（ループバック）デバイスを解決する。
+
+    設定画面で選んだ ID は Chromium 形式のハッシュの可能性があり、soundcard は
+    Windows の MMDevice ID しか解決できない。解決できない ID が渡された場合は
+    既定スピーカーへフォールバックし、stderr に警告を出す（v0.15.1）。
+    """
+    if speaker_id:
+        try:
+            return sc.get_microphone(speaker_id, include_loopback=True)
+        except Exception as e:  # noqa: BLE001 — 解決できない ID は既定へフォールバック
+            print(
+                f"PC_LOOPBACK_WARN: speaker id not found, fallback to default ({e})",
+                file=sys.stderr,
+                flush=True,
+            )
+    return sc.get_microphone(sc.default_speaker().id, include_loopback=True)
+
+
 def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event,
              monitor: bool = False) -> None:
     """スピーカー（ループバック）を録音する。monitor 時は WAV を書き出さない。"""
-    if speaker_id:
-        spk = sc.get_microphone(speaker_id, include_loopback=True)
-    else:
-        spk = sc.get_microphone(sc.default_speaker().id, include_loopback=True)
+    spk = _resolve_speaker(speaker_id)
 
     frames: list[np.ndarray] = []
     # 0.1 秒 / チャンク（16kHz）

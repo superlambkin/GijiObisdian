@@ -125,3 +125,56 @@ def test_capture_normal_mode_does_not_emit_level(tmp_path, capsys, monkeypatch):
 
     assert capsys.readouterr().out.strip() == ""
     assert written["bytes"] > 0
+
+
+# ---- スピーカー ID 解決のフォールバック ----
+
+def test_resolve_speaker_falls_back_to_default_on_unknown_id(capsys, monkeypatch):
+    """Chromium 形式の ID など解決できない ID は既定スピーカーへフォールバックする"""
+    resolved = {}
+
+    class _FakeDev:
+        id = "default-dev"
+
+    def _fake_get(id_or_name, include_loopback=False):
+        if id_or_name == "default-dev":
+            dev = _FakeDev()
+            resolved["id"] = id_or_name
+            return dev
+        raise ValueError(f"no device with id {id_or_name}")
+
+    monkeypatch.setattr(m.sc, "get_microphone", _fake_get)
+    monkeypatch.setattr(m.sc, "default_speaker", lambda: _FakeDev())
+
+    dev = m._resolve_speaker("04fd46ab8389")  # 解決できない ID（Chromium ハッシュ相当）
+    assert resolved["id"] == "default-dev"
+    err = capsys.readouterr().err
+    assert "PC_LOOPBACK_WARN" in err
+
+
+def test_resolve_speaker_uses_given_id_when_resolvable(capsys, monkeypatch):
+    """解決できる ID はそのまま使う（フォールバックしない）"""
+
+    class _FakeDev:
+        id = "target-dev"
+
+    def _fake_get(id_or_name, include_loopback=False):
+        assert id_or_name == "target-dev"
+        assert include_loopback is True
+        return _FakeDev()
+
+    monkeypatch.setattr(m.sc, "get_microphone", _fake_get)
+
+    dev = m._resolve_speaker("target-dev")
+    assert dev.id == "target-dev"
+    assert capsys.readouterr().err == ""
+
+
+def test_resolve_speaker_none_uses_default(monkeypatch):
+    class _FakeDev:
+        id = "default-dev"
+
+    monkeypatch.setattr(m.sc, "get_microphone", lambda id_or_name, include_loopback=False: _FakeDev())
+    monkeypatch.setattr(m.sc, "default_speaker", lambda: _FakeDev())
+    dev = m._resolve_speaker(None)
+    assert dev.id == "default-dev"

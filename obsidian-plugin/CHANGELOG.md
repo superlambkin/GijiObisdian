@@ -7,6 +7,7 @@ GijiObsidian 插件のすべての重要な変更は、このファイルに記�
 ### Fixed
 - 🐛 **入力レベルメーターが実機で動作しない不具合**: `LevelMonitor` に実機用デフォルト実装（`getUserMedia` / `AudioContextCtor` / `spawnPcLoopbackCapture`）が無く、main.ts からは `isRecording` しか渡していなかったため、「バーは表示されるがマイク・PC音声ともに何も測れない」状態だった。directRecorder のデフォルト実装をエクスポートして既定に使用（回帰テスト追加: deps 未指定で黙って動かないこと）
 - 🐛 **PC音声キャプチャ（WASAPI）が Python 起動直後に死ぬ問題**: デプロイ先に `config.py` が無く `ModuleNotFoundError` になっていた（v0.11 以来の潜在問題）。`pc_loopback_capture.py` と併せて `config.py` を Vault のプラグインフォルダへ配布する
+- 🐛 **スピーカー ID が解決できないと PC音声が録れない問題**: 設定画面のスピーカー選択は Chromium の `MediaDeviceInfo.deviceId`（ハッシュ）を保存するが、soundcard は Windows MMDevice ID のみ解決可能。解決失敗時は既定スピーカーへフォールバックし `PC_LOOPBACK_WARN` を stderr に出す（v0.11 以来の潜在問題）
 
 ## v0.15.0 (2026-09-05)
 
