@@ -5,6 +5,7 @@ import type { GijiSettings } from "../settings";
 import {
   DirectRecorderDeps,
   PcLevel,
+  PcLoopbackCaptureHandle,
   computeRmsLevel,
   resolveAbsoluteScriptDir,
 } from "./directRecorder";
@@ -36,10 +37,8 @@ export class LevelMonitor {
   private running = false;
   private micStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
-  private analyser: { node: AnalyserNode; buf: Float32Array } | null = null;
-  private pcHandle: NonNullable<
-    NonNullable<DirectRecorderDeps["spawnPcLoopbackCapture"]>
-  > | null = null;
+  private analyser: { node: AnalyserNode; buf: Float32Array<ArrayBuffer> } | null = null;
+  private pcHandle: PcLoopbackCaptureHandle | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private lastPcLevelAt = 0;
   private deps: Required<
@@ -74,7 +73,7 @@ export class LevelMonitor {
     const constraints: MediaStreamConstraints = micId
       ? { audio: { deviceId: { exact: micId } } }
       : { audio: true };
-    this.micStream = await this.deps.getUserMedia(constraints);
+    this.micStream = (await this.deps.getUserMedia?.(constraints)) ?? null;
 
     // 2) マイク AnalyserNode（ベストエフォート）
     const Ctor =

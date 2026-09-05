@@ -108,8 +108,8 @@ export interface DirectRecorderDeps {
   /** v0.15: 録音中の入力レベル通知先（mic/pc）。未指定なら通知しない */
   onStreamLevel?: (source: "mic" | "pc", level: PcLevel) => void;
   /** v0.15: レベル polling 用タイマー（テスト DI 用） */
-  setInterval?: typeof setInterval;
-  clearInterval?: typeof clearInterval;
+  setInterval?: (handler: () => void, timeout?: number) => ReturnType<typeof setInterval>;
+  clearInterval?: (handle: ReturnType<typeof setInterval>) => void;
 }
 
 /** v0.15: time domain データから RMS/peak を計算する（無音=0） */
@@ -252,14 +252,15 @@ const defaultFfmpeg = async (args: string[]): Promise<void> => {
  * 既に絶対パスの場合は二重結合を防ぐためそのまま返す。
  */
 export function resolveAbsoluteScriptDir(
-  app: { vault?: { adapter?: { basePath?: string } } } | undefined,
+  app: unknown,
   scriptDir: string
 ): string {
   if (!scriptDir) return scriptDir;
   // Windows: ドライブレター始まり / Unix: `/` 始まりなら絶対パス
   const isAbsolute = /^[a-zA-Z]:[\\/]/.test(scriptDir) || scriptDir.startsWith("/") || scriptDir.startsWith("\\\\");
   if (isAbsolute) return scriptDir;
-  const basePath = app?.vault?.adapter?.basePath;
+  const basePath = (app as { vault?: { adapter?: { basePath?: string } } } | undefined)?.vault
+    ?.adapter?.basePath;
   if (basePath) return join(basePath, scriptDir);
   return scriptDir;
 }
@@ -382,7 +383,11 @@ export class DirectRecorder {
   /** v0.11: WASAPI ループバック PC 音声キャプチャのハンドル（getDisplayMedia 不可時のフォールバック） */
   private pcCapture: PcLoopbackCaptureHandle | null = null;
   /** v0.15: 入力レベル計測（AnalyserNode と polling タイマー） */
-  private levelAnalysers: { source: "mic" | "pc"; analyser: AnalyserNode; buf: Float32Array }[] = [];
+  private levelAnalysers: {
+    source: "mic" | "pc";
+    analyser: AnalyserNode;
+    buf: Float32Array<ArrayBuffer>;
+  }[] = [];
   private levelIntervalId: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -404,10 +409,8 @@ export class DirectRecorder {
       ffmpeg: defaultFfmpeg,
       spawnPcLoopbackCapture: defaultSpawnPcLoopbackCapture,
       onStreamLevel: () => {},
-      setInterval: ((...args: Parameters<typeof setInterval>) =>
-        setInterval(...(args as []))) as typeof setInterval,
-      clearInterval: ((handle: Parameters<typeof clearInterval>[0]) =>
-        clearInterval(handle)) as typeof clearInterval,
+      setInterval: (handler, timeout) => setInterval(handler, timeout),
+      clearInterval: (handle) => clearInterval(handle),
       ...deps,
     };
   }
