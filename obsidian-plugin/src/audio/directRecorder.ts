@@ -126,7 +126,7 @@ export function computeRmsLevel(data: Float32Array): PcLevel {
   return { rms: Math.sqrt(sum / data.length), peak };
 }
 
-const defaultGetUserMedia = (constraints: MediaStreamConstraints): Promise<MediaStream> => {
+export const defaultGetUserMedia = (constraints: MediaStreamConstraints): Promise<MediaStream> => {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return Promise.reject(new Error("MediaDevices API がありません"));
   }
@@ -265,7 +265,7 @@ export function resolveAbsoluteScriptDir(
   return scriptDir;
 }
 
-const defaultSpawnPcLoopbackCapture = async (
+export const defaultSpawnPcLoopbackCapture = async (
   outPath: string,
   speakerDeviceId: string,
   scriptDir: string,

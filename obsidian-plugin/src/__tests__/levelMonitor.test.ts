@@ -211,3 +211,22 @@ test("getUserMedia 失敗は throw され、running にならない", async () =
   await assert.rejects(() => h.monitor.start(h.settings), /denied/);
   assert.equal(h.monitor.isRunning(), false);
 });
+
+test("実機デフォルト: deps 未指定でもデフォルト実装が使われ、黙って動かない", async () => {
+  // 回帰: v0.15.0 では getUserMedia/spawn のデフォルトが無く、main.ts が
+  // isRecording しか渡さないため「バーは出るが何も測れない」状態だった
+  const el = makeFakeEl();
+  const meter = new LevelMeter(el);
+  const monitor = new LevelMonitor(undefined, "", meter, {});
+  // node には navigator.mediaDevices がないため、デフォルト getUserMedia が
+  // 使われていれば start は reject する（デフォルトが無ければ true で返ってしまう）
+  await assert.rejects(() => monitor.start(harnessSettings), /MediaDevices/);
+  assert.equal(monitor.isRunning(), false);
+});
+
+// settings 共有（テスト本体の makeHarness と同じ最小構成）
+const harnessSettings = {
+  directMicDeviceId: "",
+  directSpeakerDeviceId: "",
+  pcLoopbackScriptDir: "",
+} as unknown as GijiSettings;

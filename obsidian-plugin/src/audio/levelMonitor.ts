@@ -7,6 +7,8 @@ import {
   PcLevel,
   PcLoopbackCaptureHandle,
   computeRmsLevel,
+  defaultGetUserMedia,
+  defaultSpawnPcLoopbackCapture,
   resolveAbsoluteScriptDir,
 } from "./directRecorder";
 import type { LevelMeter } from "../ui/levelMeter";
@@ -52,6 +54,14 @@ export class LevelMonitor {
     deps: LevelMonitorDeps = {}
   ) {
     this.deps = {
+      // v0.15.1: 実機用デフォルト。未指定だと「バーは出るが何も測れない」状態になるため
+      // （v0.15.0 回帰: main.ts は isRecording しか渡さない）
+      getUserMedia: deps.getUserMedia ?? defaultGetUserMedia,
+      AudioContextCtor:
+        deps.AudioContextCtor ??
+        (globalThis as any)?.AudioContext ??
+        (globalThis as any)?.webkitAudioContext,
+      spawnPcLoopbackCapture: deps.spawnPcLoopbackCapture ?? defaultSpawnPcLoopbackCapture,
       setInterval: deps.setInterval ?? ((handler, timeout) => setInterval(handler, timeout)),
       clearInterval: deps.clearInterval ?? ((handle) => clearInterval(handle)),
       now: deps.now ?? (() => Date.now()),
