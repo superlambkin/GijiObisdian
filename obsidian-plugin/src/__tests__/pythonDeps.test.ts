@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "events";
 import { ensurePythonDeps, buildLoopbackEnv, resetPythonDepsCache } from "../audio/pythonDeps";
+import { join } from "path";
 
 /** 指定スクリプトに従って終了コードを返す spawn のフェイク */
 function makeSpawnFake(script: Array<{ match: (py: string, args: string[]) => boolean; code: number | "error" }>) {
@@ -97,6 +98,7 @@ test("ensurePythonDeps: Python が全く無ければ ok=false（長時間待機�
 
 test("buildLoopbackEnv: scriptDir の pylibs を PYTHONPATH 先頭に追加する", () => {
   const env = buildLoopbackEnv("C:/plugin");
-  assert.ok((env.PYTHONPATH ?? "").startsWith("C:\\plugin\\pylibs"));
+  // 区切り文字は path.join に揃える（CI は Linux のためスラッシュになる）
+  assert.ok((env.PYTHONPATH ?? "").endsWith(join("C:/plugin", "pylibs")));
   assert.equal(env.PYTHONIOENCODING, "utf-8");
 });

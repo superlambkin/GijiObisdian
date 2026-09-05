@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { basename } from "path";
+import { basename, join } from "path";
 import { DirectRecorder, DirectRecorderDeps, rewriteFfmpegArgsForWasm, computeRmsLevel } from "../audio/directRecorder";
 import { buildRecordingFileName } from "../audio/recorder";
 import { GijiSettings } from "../settings";
@@ -364,8 +364,8 @@ test("start: manifestDir が相対パスの場合、Vault basePath と結合し�
   await r.start({ ...settings, audioSource: "mix" } as any);
   assert.ok(captured);
   // 期待: Vault basePath + 相対パス → 絶対パス
-  // Windows path.join の挙動: バックスラッシュ区切り
-  const expected = "C:\\Users\\me\\Vault\\.obsidian\\plugins\\GijiObsidian";
+  // 区切り文字は path.join に揃える（CI は Linux のためスラッシュになる）
+  const expected = join("C:/Users/me/Vault", ".obsidian/plugins/GijiObsidian");
   assert.equal(captured!.scriptDir, expected, `scriptDir should be ${expected}, got: ${captured!.scriptDir}`);
 });
 
