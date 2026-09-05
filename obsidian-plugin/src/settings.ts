@@ -460,9 +460,12 @@ export class GijiSettingsTab extends PluginSettingTab {
       for (const sp of got.speakers) speakerDeviceDropdown.addOption(sp.id, sp.name || sp.id);
       const currentSpkId = s.directSpeakerDeviceId;
       safeSetValue(speakerDeviceDropdown, currentSpkId || "");
-      // v0.15.1: 表示名も併せて更新（Python 側の解決ヒント）
+      // v0.15.1: 表示名も併せて更新（Python 側の解決ヒント）。レビュー指摘: save も行う
       const spkSel = speakerDeviceDropdown.selectEl as HTMLSelectElement | undefined;
-      s.directSpeakerDeviceName = spkSel?.selectedOptions?.[0]?.textContent ?? "";
+      s.directSpeakerDeviceName = currentSpkId
+        ? spkSel?.selectedOptions?.[0]?.textContent ?? ""
+        : "";
+      await this.save();
       // desc 更新
       const micDesc =
         got.source === "direct"
@@ -514,9 +517,9 @@ export class GijiSettingsTab extends PluginSettingTab {
         d.addOption("", "（システム既定）").setValue(s.directSpeakerDeviceId || "").onChange(
           async (v: string) => {
             s.directSpeakerDeviceId = v;
-            // v0.15.1: Python 側の解決ヒントとして表示名も保存する
+            // v0.15.1: Python 側の解決ヒントとして表示名も保存する（システム既定選択時は空）
             const sel = d.selectEl as HTMLSelectElement | undefined;
-            s.directSpeakerDeviceName = sel?.selectedOptions?.[0]?.textContent ?? "";
+            s.directSpeakerDeviceName = v ? sel?.selectedOptions?.[0]?.textContent ?? "" : "";
             await this.save();
           }
         );

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "events";
-import { ensurePythonDeps, buildLoopbackEnv } from "../audio/pythonDeps";
+import { ensurePythonDeps, buildLoopbackEnv, resetPythonDepsCache } from "../audio/pythonDeps";
 
 /** 指定スクリプトに従って終了コードを返す spawn のフェイク */
 function makeSpawnFake(script: Array<{ match: (py: string, args: string[]) => boolean; code: number | "error" }>) {
@@ -22,6 +22,7 @@ function makeSpawnFake(script: Array<{ match: (py: string, args: string[]) => bo
 }
 
 test("ensurePythonDeps: 既にインストール済みなら pip を実行しない", async () => {
+  resetPythonDepsCache();
   const { spawn, calls } = makeSpawnFake([
     { match: (_py, args) => args[0] === "-c", code: 0 },
   ]);
@@ -36,6 +37,7 @@ test("ensurePythonDeps: 既にインストール済みなら pip を実行しな
 });
 
 test("ensurePythonDeps: 未インストールなら pip install --target pylibs してから再チェック", async () => {
+  resetPythonDepsCache();
   let checked = 0;
   const { spawn, calls } = makeSpawnFake([
     { match: (_py, args) => args[0] === "-c", code: 0 }, // 再チェックで成功
@@ -72,6 +74,7 @@ test("ensurePythonDeps: 未インストールなら pip install --target pylibs 
 });
 
 test("ensurePythonDeps: pip 失敗時は ok=false（呼び出し側はマイクのみへフォールバック）", async () => {
+  resetPythonDepsCache();
   const spawnOrdered: any = (py: string, args: string[], opts: any) => {
     const code = args[0] === "-c" ? 1 : 1; // チェック失敗・pip も失敗
     calls.push({ py, args, env: opts?.env });
@@ -86,6 +89,7 @@ test("ensurePythonDeps: pip 失敗時は ok=false（呼び出し側はマイク�
 });
 
 test("ensurePythonDeps: Python が全く無ければ ok=false（長時間待機しない）", async () => {
+  resetPythonDepsCache();
   const { spawn } = makeSpawnFake([{ match: () => true, code: "error" }]);
   const r = await ensurePythonDeps("", { spawn });
   assert.equal(r.ok, false);

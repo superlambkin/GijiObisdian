@@ -38,7 +38,7 @@ export type PcLevelListener = (level: PcLevel) => void;
  * v0.15: Python stdout の行バッファリング + レベル JSON 行パーサ。
  * 改行で分割し、`{"type":"level","rms":...,"peak":...}` 形式のみ onLevel へ通知する。
  * それ以外の行は onOther（診断ログ用）へ渡す。改行がこない壊れた出力に備え、
- * バッファが 64KB を超えたら先頭を破棄する。
+ * バッファが 64KB を超えたら全廃棄する（末尾だけ残すと次の正規行と結合して壊れるため）。
  */
 export class LevelLineParser {
   private buffer = "";
@@ -315,8 +315,9 @@ export const defaultSpawnPcLoopbackCapture = async (
         // v0.15: stdout を pipe に変更（レベル JSON 行の受信のため。従来は ignore）
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
-        // v0.15.1: pylibs/（同梱パッケージ）を PYTHONPATH に追加
-        env: buildLoopbackEnv(scriptDir),
+        // v0.15.1: pylibs/（同梱パッケージ）を PYTHONPATH に追加。
+        // レビュー指摘: venv Python は pylibs に shadow されないよう除外する
+        env: buildLoopbackEnv(scriptDir, { skipPylibs: py.includes("venv") }),
       });
       // v0.15: stdout は行パーサへ。レベル行以外のみ診断ログに流す（レベルは 0.1 秒ごとに来るため全文ログはスパムになる）
       const parser = new LevelLineParser(

@@ -21,12 +21,23 @@ export function pylibsDir(scriptDir: string): string {
   return scriptDir ? join(scriptDir, "pylibs") : "";
 }
 
+/** 導入済みキャッシュ（レビュー指摘: 毎録音の import チェック遅延を避ける） */
+const okCache = new Set<string>();
+
+/** テスト用: キャッシュをクリアする */
+export function resetPythonDepsCache(): void {
+  okCache.clear();
+}
+
 /**
  * v0.15.1: WASAPI キャプチャ用 spawn 環境を組み立てる。
  * pylibs/（同梱パッケージ導入先）を PYTHONPATH 先頭に追加する。
+ * ただし skipPylibs の場合（venv Python 等・自身の site-packages を持つ）は付けない。
+ * レビュー指摘: pylibs のネイティブ wheel が Python バージョン不一致で venv を
+ * shadow して ImportError を起こすのを避けるため。
  */
-export function buildLoopbackEnv(scriptDir: string): NodeJS.ProcessEnv {
-  const libs = pylibsDir(scriptDir);
+export function buildLoopbackEnv(scriptDir: string, opts?: { skipPylibs?: boolean }): NodeJS.ProcessEnv {
+  const libs = opts?.skipPylibs ? "" : pylibsDir(scriptDir);
   const existing = process.env.PYTHONPATH;
   const pythonPath = libs ? (existing ? `${libs}${delimiter}${existing}` : libs) : existing;
   return {
@@ -43,22 +54,40 @@ export function pythonCandidates(scriptDir: string): string[] {
     : ["python", "py"];
 }
 
-/** `python -c "import numpy, soundcard"` が通るか（exit 0 = 通る） */
-function checkInstalled(spawn: typeof nodeSpawn, py: string, scriptDir: string): Promise<boolean> {
+/** spawn をタイムアウト付きで待つ（レビュー指摘: pip ハングで録音開始がブロックされないように） */
+function waitClose(child: ChildProcess, timeoutMs: number): Promise<number | null> {
   return new Promise((resolve) => {
+    let done = false;
+    const finish = (code: number | null) => {
+      if (!done) {
+        done = true;
+        resolve(code);
+      }
+    };
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* ignore */ }
+      finish(null);
+    }, timeoutMs);
+    child.once("error", () => { clearTimeout(timer); finish(null); });
+    child.once("close", (code) => { clearTimeout(timer); finish(code); });
+  });
+}
+
+/** `python -c "import numpy, soundcard"` が通るか（exit 0 = 通る） */
+function checkInstalled(spawn: typeof nodeSpawn, py: string, scriptDir: string, skipPylibs: boolean): Promise<boolean> {
+  return new Promise(async (resolve) => {
     let child: ChildProcess;
     try {
       child = spawn(py, ["-c", "import numpy, soundcard"], {
         stdio: "ignore",
         windowsHide: true,
-        env: buildLoopbackEnv(scriptDir),
+        env: buildLoopbackEnv(scriptDir, { skipPylibs }),
       });
     } catch {
       resolve(false);
       return;
     }
-    child.once("error", () => resolve(false));
-    child.once("close", (code) => resolve(code === 0));
+    resolve((await waitClose(child, 10_000)) === 0);
   });
 }
 
@@ -69,7 +98,7 @@ function pipInstall(
   scriptDir: string
 ): Promise<boolean> {
   const target = pylibsDir(scriptDir);
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     let child: ChildProcess;
     try {
       child = spawn(py, ["-m", "pip", "install", "--target", target, ...REQUIRED_PACKAGES.split(" ")], {
@@ -81,8 +110,8 @@ function pipInstall(
       resolve(false);
       return;
     }
-    child.once("error", () => resolve(false));
-    child.once("close", (code) => resolve(code === 0));
+    // レビュー指摘: ネットワーク不良で録音開始が無期限にブロックされないよう 120 秒で打ち切り
+    resolve((await waitClose(child, 120_000)) === 0);
   });
 }
 
@@ -102,16 +131,24 @@ export async function ensurePythonDeps(
   const spawn = deps.spawn ?? nodeSpawn;
   const candidates = pythonCandidates(scriptDir);
 
-  // 1) どれかの Python で import できるか
+  // 導入済みキャッシュ（レビュー指摘: 毎録音の起動遅延を避ける）
+  if (okCache.has(scriptDir)) {
+    return { ok: true, python: candidates[1] };
+  }
+
+  // 1) どれかの Python で import できるか（venv は自身の site-packages を使うため pylibs は渡さない）
   for (const py of candidates) {
-    if (await checkInstalled(spawn, py, scriptDir)) {
+    const isVenv = py.includes("venv");
+    if (await checkInstalled(spawn, py, scriptDir, isVenv)) {
+      okCache.add(scriptDir);
       return { ok: true, python: py };
     }
   }
 
-  // 2) 動く Python が無ければ導入のしようがない
+  // 2) 動く Python が無ければ導入のしようがない（venv は pylibs を shadow し得るため導入先にしない）
   let working: string | null = null;
   for (const py of candidates) {
+    if (py.includes("venv")) continue;
     if (await probePython(spawn, py)) {
       working = py;
       break;
@@ -127,7 +164,8 @@ export async function ensurePythonDeps(
     return { ok: false, python: working };
   }
   deps.onNotice?.("✅ PC音声用パッケージのインストールが完了しました");
-  const ok = await checkInstalled(spawn, working, scriptDir);
+  const ok = await checkInstalled(spawn, working, scriptDir, false);
+  if (ok) okCache.add(scriptDir);
   return { ok, python: working };
 }
 

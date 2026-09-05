@@ -95,6 +95,9 @@ def _capture(out_path: str, speaker_id: str | None, stop_event: threading.Event,
             data = rec.record(numframes=1600)
             # v0.15.1: 録音モードでもレベルを出す（ステータスバーのメーター表示のため）
             _emit_level(data)
+            if monitor:
+                # レビュー指摘: monitor 時は WAV を書かないため蓄積しない（メモリリーク防止）
+                continue
             pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
             frames.append(pcm)
 

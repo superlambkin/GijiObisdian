@@ -146,7 +146,8 @@ export class LevelMonitor {
         // 解放済み等。無視
       }
     }
-    if (this.pcHandle && this.deps.now() - this.lastPcLevelAt > PC_LEVEL_TIMEOUT_MS) {
+    // レビュー指摘: Python が起動できなかった場合（pcHandle === null）も灰色表示にする
+    if (this.deps.now() - this.lastPcLevelAt > PC_LEVEL_TIMEOUT_MS) {
       this.meter?.setUnavailable("pc");
     }
   }

@@ -48,6 +48,8 @@ export default class GijiPlugin extends Plugin {
       isRecording: () => isSegmentRecording(),
       onNotice: (m) => new Notice(m),
     });
+    // レビュー指摘: 入力テスト中のプラグイン無効化/再読込でリソースが残るため解放する
+    this.register(() => this.levelMonitor.stop());
     setLevelMeterApi({ meter: this.levelMeter, isRecording: () => isSegmentRecording() });
 
     this.addSettingTab(new GijiSettingsTab(this.app, this));
